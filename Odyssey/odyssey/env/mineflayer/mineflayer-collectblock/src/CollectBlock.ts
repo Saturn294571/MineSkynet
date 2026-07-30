@@ -201,8 +201,11 @@ async function mineBlock(
     const tempEvents = new TemporarySubscriber(bot);
     tempEvents.subscribeTo("itemDrop", (entity: Entity) => {
         if (
+            // Block drops receive a small random spawn offset. The original
+            // 0.5-block radius can miss a valid drop and leave it on the
+            // ground even though mining succeeded.
             entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) <=
-            0.5
+            1.5
         ) {
             options.targets.appendTarget(entity);
         }

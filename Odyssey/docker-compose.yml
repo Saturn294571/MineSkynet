@@ -1,6 +1,7 @@
 services:
   mc:
-    image: itzg/minecraft-server:latest
+    # Minecraft 1.19.4/Fabric's Mixin stack is not compatible with Java 25.
+    image: itzg/minecraft-server:java17
     container_name: odyssey-mc
     tty: true
     stdin_open: true
@@ -10,7 +11,7 @@ services:
       EULA: "TRUE"
       TYPE: "FABRIC"
       VERSION: "1.19.4"
-      FABRIC_LOADER_VERSION: "0.14.21"
+      FABRIC_LOADER_VERSION: "0.15.11"
       ONLINE_MODE: "FALSE"
       ENFORCE_SECURE_PROFILE: "FALSE"
       ALLOW_FLIGHT: "TRUE"
