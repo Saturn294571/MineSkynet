@@ -2,55 +2,60 @@
 - MineSkynet : heterogeneous Edge-Cloud Minecraft Multi-Agent framework (가제)
 
 작성일: 2026-07-18  
-최종 갱신: 2026-07-19  
+최종 갱신: 2026-07-30  
 용도: 새 세션 인계 및 연구 방향 고정
 
 ## 1. 현재 확정된 연구 방향
 
 ### 한 문장 정의
 
-연산 능력이 서로 다른 세 대의 edge computer에서 각각 독립적인 Minecraft bot agent를 실행하고, cloud LLM planner가 공동 목표를 subtask로 분해·배정하여 협력하도록 하는 **heterogeneous edge-cloud embodied multi-agent system**을 연구한다.
+연산 능력이 서로 다른 세 대의 edge computer에서 각각 독립적인 Minecraft bot drone를 실행하고, 중앙 cloud-tier control mothership이 공동 목표의 분해·배정·상태 관리·실패 재계획을 담당하도록 하는 **heterogeneous edge-cloud embodied multi-agent system**을 연구한다.
 
 ### 핵심 연구 질문
 
-> Cloud planner가 연산 성능과 local LLM 능력이 서로 다른 Minecraft agent들에게 subtask를 적절히 배정하는 구조는 cloud-only, local-only 또는 고정 역할 방식보다 낮은 비용으로 유사하거나 더 높은 협력 task 성공률을 달성할 수 있는가?
+> 통합 cloud-tier orchestrator가 연산 성능과 local LLM 능력이 서로 다른 Minecraft bot drone들에게 subtask를 적절히 배정하는 구조는 cloud-only, local-only 또는 고정 역할 방식보다 낮은 비용으로 유사하거나 더 높은 협력 task 성공률을 달성할 수 있는가?
 
 ### 핵심 가설
 
-1. 복잡한 계획만 cloud LLM에 맡기고 실행은 local agent가 담당하면 cloud-only 방식보다 API 비용을 줄일 수 있다.
+1. 복잡한 계획만 cloud-tier mothership에 맡기고 실행은 edge drone가 담당하면 cloud-only 방식보다 API 비용을 줄일 수 있다.
 2. agent별 수행 능력을 고려한 task allocation은 agent 차이를 무시한 균등·무작위 배정보다 성공률과 완료 시간을 개선한다.
-3. 병렬화 가능한 subtask를 여러 bot에 배정하면 강한 단일 agent보다 전체 task 완료 시간이 감소한다.
+3. 병렬화 가능한 subtask를 여러 drone에 배정하면 강한 단일 agent보다 전체 task 완료 시간이 감소한다.
 4. planning, communication, state synchronization 비용을 모두 포함한 뒤에도 일정 조건에서는 edge-cloud 협력의 이득이 남는다.
 
 ## 2. 시스템의 정확한 의미
 
-세 컴퓨터가 하나의 bot 내부 연산을 나누는 구조가 아니다. **각 컴퓨터가 Minecraft 세계에 접속한 별도의 bot avatar 하나를 담당한다.**
+세 컴퓨터가 하나의 drone 내부 연산을 나누는 구조가 아니다. **각 컴퓨터가 Minecraft 세계에 접속한 별도의 bot avatar 하나를 담당한다.**
 
 ```text
-                         Cloud LLM Planner
-                    task decomposition / assignment
-                         failure replanning
-                                  │
-                         Shared State Manager
-                  position / inventory / task status
-                                  │
-                 ┌────────────────┼────────────────┐
-                 │                │                │
-          Raspberry Pi       GTX 1050 Ti       RTX 3090
-             Agent A            Agent B          Agent C
-          Tiny local model   Small local model  Larger local model
-          + skill executor   + skill executor   + skill executor
-                 │                │                │
-                 └──── Shared Minecraft World ─────┘
+                  MineSkynet Cloud-tier Mothership
+        ┌──────────────────────────────────────────────┐
+        │ Global Orchestrator                          │
+        │ goal decomposition / DAG / allocation       │
+        │                                              │
+        │ Shared State Service                         │
+        │ world / inventory / capability / task state │
+        │                                              │
+        │ Evaluator & Replanner                        │
+        │ validation / reflection / retry / reassign  │
+        └──────────────────────┬───────────────────────┘
+                               │ structured task protocol
+                 ┌─────────────┼─────────────┐
+                 │             │             │
+          Raspberry Pi    GTX 1050 Ti    RTX 3090
+            Actor A         Actor B        Actor C
+          local model     local model    local model
+          + executor      + executor     + executor
+                 │             │             │
+                 └─── Shared Minecraft World ───┘
 ```
 
-여기서 `agent`, `bot`, `worker`는 한 Minecraft avatar와 그 avatar를 제어하는 local process의 묶음을 뜻한다. 단순 compute worker나 하나의 모델을 분산 추론하는 node를 뜻하지 않는다.
+여기서 `agent`, `bot`, `worker`, `drone`는 한 Minecraft avatar와 그 avatar를 제어하는 local process의 묶음을 뜻한다. 단순 compute worker나 하나의 모델을 분산 추론하는 node를 뜻하지 않는다.
 
 ## 3. 보유 자원과 예상 역할
 
 ### 확인된 장비
 
-- Raspberry Pi: 상세 모델·RAM은 추후 확인
+- Raspberry Pi: Raspberry Pi 4B, RAM 4GB
 - GTX 1050 Ti 컴퓨터: VRAM과 CPU/RAM은 추후 확인
 - RTX 3090 컴퓨터: VRAM 24GB, 현재 주 개발 장비
 - 외부 cloud LLM API: 고난도 계획과 재계획에 제한적으로 사용
@@ -67,7 +72,7 @@
 | Java | OpenJDK 17 |
 | Docker | 29.1.3 |
 | Docker Compose | 2.40.3 |
-| Node.js | 22.22.1 |
+| Node.js | Mineflayer 실행은 20.13.1로 고정, system Node는 22.22.1 |
 | npm | 9.2.0 |
 | Odyssey Python | 저장소 전용 Conda Python 3.10.20 |
 
@@ -151,7 +156,7 @@ Mineflayer와 관련 npm package는 전역 설치하지 않고 다음 프로젝�
 Odyssey/odyssey/env/mineflayer/node_modules
 ```
 
-설치는 해당 디렉터리에서 `npm install` 또는 검증된 lock file 기반 `npm ci`로 수행한다. 원본 package는 Node.js 16.13 이상을 요구하지만 현재 Node 22에서의 호환성은 아직 end-to-end 검증되지 않았다. 오류가 발생하면 임의 patch 전에 Node 18/20 LTS의 프로젝트 로컬 사용을 우선 비교한다.
+설치는 해당 디렉터리에서 `npm install` 또는 검증된 lock file 기반 `npm ci`로 수행한다. Node.js 22에서는 Mineflayer bot이 `Invalid move player packet received`로 종료됐으므로 Odyssey 공식 Docker 문서와 동일한 Node.js 20.13.1을 `nvm`으로 선택해 실행한다.
 
 Python, Node, Minecraft server를 다음과 같이 분리한다.
 
@@ -166,28 +171,42 @@ Java/npm/Docker CLI       → system tools
 
 역할은 초기 구현을 위한 가정이며, 연구 결과로 고정된 사실이 아니다.
 
-| Agent | 예상 local 구성 | 적합한 초기 subtask |
+| Edge actor | 예상 local 구성 | 적합한 초기 subtask |
 |---|---|---|
-| Raspberry Pi agent | Gemma 3 1B 계열 GGUF Q4 또는 rule-based selector + 검증된 skill | 지정 위치 이동, 운반, chest deposit, item handoff, 단순 반복 작업 |
-| GTX 1050 Ti agent | Gemma 3 1B 계열 INT4/GGUF + skill library | 채집, 간단한 제작, 상태 요약, 제한적인 오류 복구 |
-| RTX 3090 agent | BF16/FP16 local model 또는 더 큰 quantized model + skill library | 복잡한 탐색, skill 조합, 코드 수정, 난도가 높은 subtask |
-| Cloud planner | 고성능 API LLM | 전체 목표 분해, dependency DAG, 배정, 동기화, 실패 후 재계획 |
+| Raspberry Pi actor | Gemma 3 1B 계열 GGUF Q4 또는 rule-based selector + 검증된 skill | 지정 위치 이동, 운반, chest deposit, item handoff, 단순 반복 작업 |
+| GTX 1050 Ti actor | Gemma 3 1B 계열 INT4/GGUF + skill library | 채집, 간단한 제작, 상태 요약, 제한적인 오류 복구 |
+| RTX 3090 actor | BF16/FP16 local model 또는 더 큰 quantized model + skill library | 복잡한 탐색, skill 조합, 코드 수정, 난도가 높은 subtask |
+| Cloud-tier control plane | 3090 또는 선택적 외부 API LLM | 전체 목표 분해, DAG, capability-aware 배정, 상태 관리, 검증, 실패 후 재계획 |
 
 약한 node가 매번 자유롭게 JavaScript를 생성하도록 강제하지 않는다. 약한 node일수록 검증된 skill의 선택과 실행을 중심으로 구성하고, 강한 node에 skill 조합과 repair를 더 허용한다.
 
 ## 4. 제안 아키텍처
 
-### Cloud planner
+Odyssey와 VillagerAgent의 이름을 그대로 병렬 배치하지 않고, 중복 기능을 세 개의 cloud-tier 모듈과 하나의 edge runtime으로 추상화한다. Odyssey와 VillagerAgent는 구현 출처와 비교 baseline이며 MineSkynet의 외부 interface 이름이 아니다.
 
-- 공동 목표를 dependency가 있는 subtask DAG로 분해한다.
-- 각 subtask의 요구 능력, 선행 조건, 필요한 item과 위치를 구조화한다.
-- agent capability profile과 현재 상태를 받아 subtask를 배정한다.
-- 실패, timeout, dependency 변화가 발생하면 필요한 부분만 재계획한다.
-- 매 Minecraft tick이나 저수준 행동마다 호출하지 않는다.
+| MineSkynet 모듈 | 통합하는 기존 역할 |
+|---|---|
+| Global Orchestrator | Villager Task Decomposer·Agent Controller + Odyssey Planner |
+| Shared State Service | Villager State Manager + Odyssey observation·task progress |
+| Evaluator & Replanner | Odyssey Reflector/Critic + Villager 실패 처리·재할당 |
+| Edge Actor Runtime | Odyssey Actor·skill retrieval + Mineflayer executor |
 
-### Capability-aware scheduler
+### Global Orchestrator
 
-각 `agent i`와 `subtask j` 조합에 대해 다음 값을 추정한다.
+- 공동 목표를 dependency가 있는 cooperative DAG로 분해한다.
+- 각 subtask를 edge actor가 실행할 수 있는 atomic goal과 허용 skill 집합으로 구체화한다.
+- capability profile과 현재 상태를 바탕으로 subtask를 actor에 배정한다.
+- dependency, timeout, retry와 실행 lifecycle을 관리한다.
+- 매 Minecraft tick이나 저수준 행동마다 LLM을 호출하지 않는다.
+
+Task decomposition과 Odyssey planning을 별도 최상위 서비스로 중복 구현하지 않는다. 하나의 orchestrator 내부에서 다음 두 planning level로 구분한다.
+
+```text
+high-level planning: team goal → cooperative DAG
+low-level planning : assigned subtask → bounded atomic goal
+```
+
+Capability-aware scheduler도 별도 최상위 시스템이 아니라 Global Orchestrator의 allocation policy다. 각 `actor i`와 `subtask j` 조합에 대해 다음 값을 사용한다.
 
 - 성공 가능성 `P_ij`
 - 예상 완료 시간 `T_ij`
@@ -196,8 +215,6 @@ Java/npm/Docker CLI       → system tools
 - 현재 위치와 필요한 자원에 따른 이동·handoff 비용
 
 초기에는 atomic task calibration으로 만든 고정 profile을 사용한다. 학습형·history-adaptive profile은 본 연구의 필수 조건이 아니다.
-
-개념적 배정 목적은 다음과 같다.
 
 ```text
 minimize:
@@ -212,12 +229,60 @@ subject to:
     task_dependencies are satisfied
 ```
 
-### Local agent
+### Shared State Service
 
-- cloud가 전달한 구조화 subtask를 local LLM 또는 rule-based selector가 해석한다.
+- world, position, inventory와 task dependency 상태의 authoritative source다.
+- actor별 status, heartbeat, latency, memory, energy와 capability profile을 관리한다.
+- allocation, retry, reassignment와 state transition 이력을 보존한다.
+- Global Orchestrator와 Evaluator가 같은 snapshot/version을 기준으로 판단하도록 한다.
+- edge actor가 보고한 `SUCCESS`를 그대로 신뢰하지 않고 가능한 경우 Minecraft 관측과 inventory delta로 교차 검증한다.
+
+### Evaluator & Replanner
+
+- 먼저 inventory delta, 위치, block 상태와 schema에 기반한 deterministic validation을 수행한다.
+- 단순 실패는 제한된 retry 또는 다른 actor로 reassignment한다.
+- 원인이 모호하거나 계획 자체가 잘못된 경우에만 LLM reflection을 호출한다.
+- 평가 결과를 capability profile과 task history에 반영하고 Global Orchestrator에 부분 재계획을 요청한다.
+
+```text
+execution result
+    → deterministic validation
+    → success: state commit
+    → simple failure: retry or reassign
+    → complex failure: LLM reflection and replan
+```
+
+### Edge Actor Runtime
+
+- 각 물리 edge node는 완전한 Odyssey planner–actor–reflector를 복제하지 않고 Odyssey Actor 역할만 담당한다.
+- cloud가 전달한 bounded atomic goal을 local LLM 또는 rule-based selector가 해석한다.
+- 검색된 소수의 허용 skill 중 하나를 선택하고 schema가 허용한 parameter만 채운다.
 - 공통 skill interface를 통해 Mineflayer action을 실행한다.
-- 진행 상태, inventory 변화, 성공·실패, 오류를 State Manager에 보고한다.
-- cloud planner와 다른 agent의 전체 대화를 항상 공유받지는 않는다.
+- observation, inventory delta, 실행 시간, 오류와 local validation 결과를 Shared State Service에 보고한다.
+- 다른 actor의 전체 대화나 전역 planning context를 항상 공유받지는 않는다.
+
+Cloud–edge 경계는 자유 형식 prompt가 아니라 versioned structured task protocol로 고정한다.
+
+```json
+{
+  "task_id": "collect_oak_01",
+  "actor_id": "actor_rpi",
+  "goal": "collect one oak log",
+  "allowed_skills": ["exploreUntil", "mineBlock", "mineWoodLog"],
+  "timeout_sec": 120,
+  "success_condition": {
+    "inventory_delta": {"oak_log": 1}
+  }
+}
+```
+
+M0에서는 원본 연구의 기능적 baseline 확인을 위해 RTX 3090에서 Odyssey planner–actor–reflector 전체를 먼저 재현한다. 이후 MineSkynet 단계에서 planner와 reflector를 cloud-tier control plane으로 분리하고 edge에는 Actor Runtime만 남긴다.
+
+### Cloud-tier의 물리 배치
+
+초기 prototype은 AWS를 필수로 사용하지 않는다. RTX 3090 장비에 Global Orchestrator, Shared State Service와 Evaluator & Replanner를 배치하고 이를 **on-premise cloud-tier coordinator** 또는 **centralized cloud proxy**로 기술한다. 연구의 핵심은 public cloud 사업자 사용 여부가 아니라 중앙 고성능 control plane과 이기종 edge actor 사이의 계층적 협력이다.
+
+RTX 3090이 Minecraft server, control plane과 Actor C를 동시에 담당하면 자원 경합이 발생할 수 있으므로 서비스별 CPU/RAM/VRAM, queueing latency와 inference latency를 기록한다. 이후 외부 API planner 조건을 추가하여 on-premise coordinator와 비교할 수 있다.
 
 ### Tailscale 기반 edge network
 
@@ -229,11 +294,10 @@ RTX 3090, GTX 1050 Ti, Raspberry Pi는 동일 Tailscale tailnet에 접속되어 
                   ┌───────────────┼───────────────┐
                   │               │               │
             mineskynet-rpi  mineskynet-1050  mineskynet-3090
-              Agent A          Agent B          Agent C
+              Actor A          Actor B          Actor C
             Mineflayer       Mineflayer       Minecraft server
-            local model      local model      Coordinator
-            control API      control API      Shared State Manager
-                                              Mineflayer / LLM backend
+            local model      local model      Control Plane
+            control API      control API      Actor C / LLM backend
 ```
 
 #### 장비별 역할과 endpoint
@@ -241,10 +305,10 @@ RTX 3090, GTX 1050 Ti, Raspberry Pi는 동일 Tailscale tailnet에 접속되어 
 | Node | 주요 서비스 | 잠정 port |
 |---|---|---:|
 | `mineskynet-3090` | Minecraft Fabric server | 25565 |
-| `mineskynet-3090` | Shared State Manager / coordinator API | 8000 |
-| `mineskynet-3090` | Agent C Mineflayer control | 3003 |
-| `mineskynet-1050` | Agent B Mineflayer control | 3002 |
-| `mineskynet-rpi` | Agent A Mineflayer control | 3001 |
+| `mineskynet-3090` | MineSkynet control plane API | 8000 |
+| `mineskynet-3090` | Actor C Mineflayer control | 3003 |
+| `mineskynet-1050` | Actor B Mineflayer control | 3002 |
+| `mineskynet-rpi` | Actor A Mineflayer control | 3001 |
 
 MagicDNS 이름을 고정하여 설정과 코드에 `100.x.y.z` 주소를 직접 넣지 않는다.
 
@@ -261,12 +325,12 @@ sudo tailscale set --hostname=mineskynet-rpi
 현재 Odyssey의 `index.js`는 전역 `bot` 하나만 관리하므로 초기 prototype에서는 Mineflayer service 하나당 bot 하나를 실행한다. 하나의 service에서 여러 bot을 공유하는 방식보다 process 격리를 우선한다.
 
 ```text
-Agent A: mineskynet-rpi:3001  / username=agent_rpi
-Agent B: mineskynet-1050:3002 / username=agent_1050
-Agent C: 127.0.0.1:3003      / username=agent_3090
+Actor A: mineskynet-rpi:3001  / username=agent_rpi
+Actor B: mineskynet-1050:3002 / username=agent_1050
+Actor C: 127.0.0.1:3003      / username=agent_3090
 ```
 
-Coordinator는 Tailscale을 통해 각 control API의 `/start`, `/step`, `/stop`을 호출하며, 각 agent daemon은 자신의 local model을 localhost에서 호출한다. 이 구조는 bot별 장애 격리, 독립 로그, 자원 측정과 추후 node 이동을 단순화한다.
+Global Orchestrator는 Tailscale을 통해 각 control API의 `/start`, `/step`, `/stop`을 호출하며, 각 actor daemon은 자신의 local model을 localhost에서 호출한다. 이 구조는 bot별 장애 격리, 독립 로그, 자원 측정과 추후 node 이동을 단순화한다.
 
 #### CLI 운영 계층
 
@@ -278,7 +342,7 @@ server command/reset   → 3090 localhost RCON
 remote administration → Tailscale SSH
 bot lifecycle          → Mineflayer HTTP API
 skill execution        → Mineflayer /step
-state/task tracking    → Shared State Manager
+state/task tracking    → Shared State Service
 ```
 
 목표 CLI interface는 다음과 같다.
@@ -306,7 +370,7 @@ Odyssey의 Mineflayer `/step`은 전달된 JavaScript를 `eval()`로 실행하�
 - Tailscale Funnel과 router port forwarding을 사용하지 않는다.
 - Mineflayer control API는 Tailscale IP에만 bind하거나 localhost에 bind한 뒤 tailnet-only Tailscale Serve를 사용한다.
 - 3090 coordinator만 worker control port `3001~3003`에 접근하도록 Tailscale Grants/ACL을 제한한다.
-- worker는 3090의 Minecraft `25565`와 Shared State `8000`에만 접근하도록 제한한다.
+- worker는 3090의 Minecraft `25565`와 control plane `8000`에만 접근하도록 제한한다.
 - worker 간 control API 직접 접근은 차단한다.
 - Minecraft RCON은 3090 localhost에만 두고 tailnet에도 공개하지 않는다.
 - local model endpoint는 각 worker의 localhost에 유지한다.
@@ -315,7 +379,7 @@ Odyssey의 Mineflayer `/step`은 전달된 JavaScript를 `eval()`로 실행하�
 ```text
 Coordinator → Worker control API 3001~3003 : allow
 Worker → Minecraft server 25565             : allow
-Worker → Shared State API 8000               : allow
+Worker → Control Plane API 8000              : allow
 Worker → Worker control API                  : deny
 Worker → Minecraft RCON                      : deny
 Other tailnet devices → control API          : deny
@@ -326,7 +390,7 @@ Other tailnet devices → control API          : deny
 Tailscale 통신 비용은 orchestration overhead에 포함한다.
 
 - coordinator → worker subtask 전달 latency
-- worker → Shared State 보고 latency
+- worker → Shared State Service 보고 latency
 - item handoff synchronization latency
 - direct connection과 DERP relay 여부
 - reconnect, timeout과 packet loss
@@ -342,7 +406,7 @@ Tailscale 통신 비용은 orchestration overhead에 포함한다.
 4. 3090에서 원본 Odyssey 단일 bot의 end-to-end task를 먼저 성공시킨다.
 5. Raspberry Pi와 1050 Ti에 rule-based Mineflayer bot을 순서대로 추가한다.
 6. agent별 control port와 registry를 구성한다.
-7. coordinator CLI와 Shared State Manager를 연결한다.
+7. coordinator CLI와 통합 control plane API를 연결한다.
 8. Tailscale Grants/ACL과 host firewall로 통신 범위를 제한한다.
 9. 마지막으로 장비별 local LLM을 연결한다.
 
@@ -416,7 +480,7 @@ Gemma 3 1B를 Voyager 또는 원본 Odyssey의 전체 LLM을 대체하는 범용
 
 따라서 Gemma 3 1B의 local 역할은 다음과 같이 제한한다.
 
-> Cloud planner가 생성한 좁고 구조화된 subtask를 받아, 검색된 소수의 검증된 skill 중 하나를 선택하고 파라미터를 채우며 실행 결과를 제한된 상태로 분류하는 **bounded local skill worker**.
+> Global Orchestrator가 생성한 좁고 구조화된 atomic goal을 받아, 검색된 소수의 검증된 skill 중 하나를 선택하고 파라미터를 채우며 실행 결과를 제한된 상태로 분류하는 **bounded edge actor**.
 
 Gemma 3 1B가 담당하지 않는 기능은 다음과 같다.
 
@@ -427,7 +491,7 @@ Gemma 3 1B가 담당하지 않는 기능은 다음과 같다.
 - JavaScript 실행 오류를 바탕으로 한 코드 수정
 - 복잡한 전투 장비 계획과 장기 spatial reasoning
 
-이 기능은 cloud planner 또는 RTX 3090의 강한 agent에 배정한다.
+이 기능은 cloud-tier control plane 또는 RTX 3090의 강한 actor에 배정한다.
 
 #### Odyssey·Voyager task에 대한 적합성 판단
 
@@ -465,8 +529,8 @@ Allowed output:
 - count, position, `agent_id`는 schema validation을 수행한다.
 - inventory로 결정 가능한 성공·실패는 rule-based fast path를 사용한다.
 - top-1 confidence가 낮거나 top-1/top-2 차이가 작으면 실행하지 않고 escalation한다.
-- schema validation 실패, 검색 후보 부재, 동일 subtask 2회 실패 시 cloud replanning을 요청한다.
-- local model의 잘못된 `SUCCESS`가 Shared State를 오염시키지 않도록 가능하면 inventory와 world state로 교차 검증한다.
+- schema validation 실패, 검색 후보 부재, 동일 subtask 2회 실패 시 Evaluator & Replanner에 escalation한다.
+- local model의 잘못된 `SUCCESS`가 Shared State Service를 오염시키지 않도록 inventory와 world state로 교차 검증한다.
 
 #### Local model Go/No-Go 평가
 
@@ -504,7 +568,7 @@ Allowed output:
 
 이 연구가 증명하려는 것은 Gemma 3 1B가 MineMA-8B를 완전히 대체한다는 주장이 아니다. **제한된 역할의 약한 worker도 capability-aware allocation을 통해 팀 성능에 기여할 수 있는 조건**을 밝히는 것이 목표다.
 
-### Shared State Manager
+### 공통 상태 schema
 
 최소 상태 schema는 다음을 포함한다.
 
@@ -526,6 +590,21 @@ TaskState
 - assigned_agent
 - status
 - outputs
+
+CapabilityState
+- actor_id / model_id / quantization
+- task_type
+- success_rate
+- mean / p95 latency
+- peak memory / energy
+- retry / timeout count
+
+EvaluationEvent
+- task_id / attempt_id
+- validation_result
+- failure_class
+- decision: commit | retry | reassign | replan
+- reflection_cost / latency
 ```
 
 ## 5. 구현 기반과 학술적 위치
@@ -536,7 +615,17 @@ TaskState
 - [Odyssey](https://github.com/zju-vipa/odyssey): Voyager 직접 파생, 광범위한 primitive/compositional skill library 참고
 - [VillagerAgent](https://github.com/cnsdqd-dyb/VillagerAgent): 여러 Minecraft bot, DAG decomposition, agent assignment, State Manager의 직접적인 구현 baseline
 
-현재 Voyager 저장소를 반드시 최종 multi-agent framework로 유지해야 하는 것은 아니다. 먼저 각 프로젝트의 multiplayer 실행과 skill 재사용 가능성을 비교한 후 구현 기반을 결정한다.
+최종 시스템은 한 선행 프레임워크를 그대로 상위 wrapper로 사용하는 구조가 아니다. Odyssey의 Actor·skill retrieval·Mineflayer 실행 계층과 VillagerAgent의 DAG·assignment·state-management 아이디어를 기능 단위로 재사용하고, 중복 planning·failure handling은 MineSkynet의 통합 cloud-tier interface로 재구성한다.
+
+```text
+Odyssey Actor / skills              → Edge Actor Runtime
+Odyssey Planner + Villager Decomposer
++ Villager Agent Controller         → Global Orchestrator
+Odyssey Reflector + Villager retry  → Evaluator & Replanner
+Odyssey observation + Villager state→ Shared State Service
+```
+
+따라서 전체 시스템의 이름과 실험 대상은 MineSkynet이다. VillagerAgent는 가장 가까운 orchestration baseline이며 전체를 감싸는 필수 runtime 이름이 아니다.
 
 ### 가장 가까운 선행연구
 
@@ -550,7 +639,7 @@ TaskState
 
 1. 실제로 서로 다른 세 물리적 edge hardware
 2. 서로 다른 크기·성능의 quantized local LLM
-3. cloud planner와 local embodied agents의 계층적 협력
+3. 통합 cloud-tier control plane과 bounded edge actor의 계층적 협력
 4. agent별 성공률·시간·비용을 고려한 capability-aware allocation
 5. API 비용뿐 아니라 local latency, energy, synchronization, retry를 포함한 orchestration overhead
 
@@ -562,7 +651,7 @@ TaskState
 
 1. 동일 Minecraft server에 bot 세 개를 동시에 접속한다.
 2. 각 bot에 고유 `agent_id`와 독립 inventory를 부여한다.
-3. 중앙 process가 구조화된 subtask를 각 bot에 전달한다.
+3. Global Orchestrator가 구조화된 atomic goal을 각 actor에 전달한다.
 4. 위치, inventory, 성공·실패 상태를 수집한다.
 5. agent 간 item handoff와 chest 공유를 검증한다.
 
@@ -593,8 +682,8 @@ agent-task별 성공률, 평균 시간, API 호출, local inference latency, ene
 | Baseline | 설명 |
 |---|---|
 | Single strong agent | RTX 3090 agent 하나만 사용 |
-| Cloud-only | 각 agent 판단에 cloud LLM을 사용 |
-| Local-only | cloud planner 없이 local agent만 사용 |
+| Cloud-only | 각 actor의 판단까지 cloud LLM을 사용 |
+| Local-only | 중앙 orchestrator 없이 local actor만 사용 |
 | Random/uniform | capability를 무시하고 subtask 배정 |
 | Static roles | agent별 역할을 수동으로 고정 |
 | Capability-aware | calibration profile을 이용해 동적으로 배정하는 제안 방식 |
@@ -653,16 +742,16 @@ agent-task별 성공률, 평균 시간, API 호출, local inference latency, ene
 
 ## 10. 바로 다음 할 일
 
-1. Raspberry Pi 모델·RAM·OS와 GTX 1050 Ti VRAM·CPU·RAM을 기록한다.
-2. VillagerAgent, Odyssey, 현재 Voyager 중 multiplayer prototype에 가장 적합한 기반을 비교한다.
-3. 동일 server에 Mineflayer bot 세 개를 띄우는 최소 prototype을 만든다.
-4. 공통 `AgentState`, `TaskState`, subtask message schema를 정의한다.
-5. local LLM을 붙이기 전에 rule-based skill로 item handoff와 병렬 task를 검증한다.
-6. 공식 Minecraft QA/MCQ 데이터를 내려받아 schema, 중복, 길이 분포와 라이선스를 확인한다.
-7. Gemma 3 1B IT의 zero-shot skill-selection baseline을 먼저 측정한다.
-8. RTX 3090에서 BF16 LoRA를 수행하고 BF16 merged model을 기준 모델로 고정한다.
-9. Q8/Q5/Q4 또는 INT4 배포본을 만들고 GTX 1050 Ti와 Raspberry Pi에서 메모리·latency·정확도를 비교한다.
-10. 이후 node별 모델 결과와 atomic task 수행 결과를 결합해 capability calibration을 진행한다.
+1. RTX 3090에서 MineMA-8B-v3를 연결해 원본 Odyssey actor의 나무 채굴 end-to-end baseline을 완료한다.
+2. Odyssey Actor의 입력·출력·skill retrieval·executor 경계를 공통 `EdgeActor` interface로 추출한다.
+3. `Global Orchestrator`, `Shared State Service`, `Evaluator & Replanner`의 최소 API와 event schema를 정의한다.
+4. 공통 `AgentState`, `TaskState`, `CapabilityState`, `EvaluationEvent` schema를 구현한다.
+5. 동일 server에 Mineflayer bot 세 개를 띄우고 actor별 독립 control API를 연결한다.
+6. local LLM을 붙이기 전에 rule-based skill로 item handoff와 병렬 task를 검증한다.
+7. Gemma 3 1B IT의 zero-shot actor-only skill-selection baseline을 측정한다.
+8. 공식 Minecraft QA/MCQ와 실행 로그 기반 structured skill-selection 데이터를 검토한다.
+9. 필요성이 확인되면 RTX 3090에서 BF16 LoRA 후 Q8/Q5/Q4 배포본을 만든다.
+10. node별 모델 결과와 atomic task 수행 결과를 결합해 capability calibration을 진행한다.
 
 ## 세션 인계용 주의사항
 
@@ -670,7 +759,10 @@ agent-task별 성공률, 평균 시간, API 호출, local inference latency, ene
 - 현재 주제는 LHF 개선 연구가 아니다.
 - 세 edge node는 하나의 bot 연산을 나누는 compute worker가 아니다.
 - 세 edge node는 각각 공유 Minecraft 세계에 존재하는 독립 bot agent 하나를 담당한다.
-- cloud LLM은 저수준 행동 controller가 아니라 중앙 planner·allocator·replanner다.
+- M0에서는 원본 Odyssey 전체를 3090에서 재현하지만 최종 edge node에는 Odyssey Actor Runtime만 배치한다.
+- Odyssey와 VillagerAgent의 중복 기능은 `Global Orchestrator`, `Shared State Service`, `Evaluator & Replanner`로 통합한다.
+- VillagerAgent는 전체 시스템 wrapper가 아니라 가장 가까운 orchestration baseline이다.
+- cloud-tier control plane은 저수준 행동 controller가 아니며 초기에는 RTX 3090에 on-premise cloud proxy로 배치한다.
 - Gemma 3 1B는 RTX 3090에서 BF16 LoRA로 학습하고, edge 배포 단계에서만 사후 양자화한다.
 - Minecraft QA 데이터만으로는 skill selector가 완성되지 않으므로 별도의 structured skill-selection 데이터가 필요하다.
-- 현재 최우선 목표는 새 알고리즘 구현보다 세 bot, 공통 상태, subtask 전달의 최소 end-to-end 연결이다.
+- 현재 최우선 목표는 MineMA 기반 원본 Odyssey end-to-end baseline을 완료한 뒤 actor interface를 분리하는 것이다.

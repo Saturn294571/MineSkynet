@@ -31,4 +31,35 @@
             - autonomous exploration task : 다음 목표와 적절한 스킬을 고르는 능력 평가. 자원을 찾고, 활용하고, 예상치 못한 상황에 적응하는 능력.
     - ablation study : 플래너와 스킬 라이브러리가 각각 필수적 요소. 하나라도 빠지면 심각한 성능저하.
     - 한계 : 오픈소스 LLM은 할루시네이션이 쉽다. 이를 방지하기 위해 RAG 도입을 고려중. 현재 텍스트 기반 LLM에 초점을 맞춰, 시각적 요소는 거의 배제되었다.
+
+
+
 # 7.30 랩미팅
+1) 프레임워크 계획 요약
+    - 핵심 연구 질문 : 통합 cloud-tier orchestrator가 연산 성능과 local LLM 능력이 서로 다른 Minecraft bot drone들에게 subtask를 적절히 배정하는 구조는 cloud-only, local-only 또는 고정 역할 방식보다 낮은 비용으로 유사하거나 더 높은 협력 task 성공률을 달성할 수 있는가?
+        - 핵심 가설
+            1. 복잡한 계획만 cloud-tier mothership에 맡기고 실행은 edge drone가 담당하면 cloud-only 방식보다 API 비용을 줄일 수 있다.
+            2. agent별 수행 능력을 고려한 task allocation은 agent 차이를 무시한 균등·무작위 배정보다 성공률과 완료 시간을 개선한다.
+            3. 병렬화 가능한 subtask를 여러 drone에 배정하면 강한 단일 agent보다 전체 task 완료 시간이 감소한다.
+            4. planning, communication, state synchronization 비용을 모두 포함한 뒤에도 일정 조건에서는 edge-cloud 협력의 이득이 남는다.
+    - 보유 자원/장비 및 역할
+        - (빌리저 에이전트 논문 설명)
+        - (오케스트레이터-엣지 프레임워크 구조도)
+            - Raspberry Pi: raspberry pi 4b (4gb ram)
+            - GTX 1050 Ti 컴퓨터: vram 4gb; cpu/ram 차후 확인
+            - RTX 3090 컴퓨터: VRAM 24GB, 현재 주 개발 장비
+            - 외부 cloud LLM API: 고난도 계획과 재계획에 제한적으로 사용 (3090에 통합 고려중; vram, ram 용량 넉넉)
+    - drone(기존 오딧세이 actor) 대안 LLM모델
+        - 기존 llama 3 8b를 기반으로 파인튜닝한 MineMA는 저사양 노드에 올릴 수 없으므로 gemma 3 1B 모델을 기반으로 LoRA를 통해 파인튜닝한다 (훈련 데이터셋은 허깅페이스에 공유됨)
+        - 극한으로 양자화 걸면 양자화 수준 INT4, 컨텍스트 윈도우 8k 기준 vram 1.84gb. (axpml 사진)
+    - 네트워킹 방법
+        - tailscale을 통해 번거로운 포트포워딩/공인IP 또는 같은 공유기 내 연결 강제 문제 우회
+        - 일종의 VPN. 설치후 작동시 타 라우터/공유기 환경 내에서도 잘 동작
+        - 당연히 진지한 기여로 포장X.
+2) 현재 진행상황 요약
+    1) 자바 버전 이슈와 nvm 이슈 해결
+    2) mineflyer을 통해 cli 환경으로 나무 1개 채굴 테스트 성공
+    3) 오딧세이 actor 재현을 위해 MineMA 다운로드 진행중
+3) 추후 계획
+    - mineMA까지 포함된 온전한 상태에서 나무 채굴 테스트, 작업대 제작 테스트 확인
+    - drone 모델로 llama3/mineMA가 아닌 gemma 3 1b로 교체 가능한지 여부; 교체후 똑같이 나무-작업대 테스트
