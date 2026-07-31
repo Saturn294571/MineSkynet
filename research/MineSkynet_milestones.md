@@ -1,6 +1,6 @@
 # MineSkynet 연구 마일스톤
 
-최종 갱신: 2026-07-30  
+최종 갱신: 2026-07-31  
 용도: 구현·실험 진행 상황, 성공 기준, 장애 요인 및 다음 작업 관리  
 연구 설계와 근거는 `MineSkynet_blueprint.md`를 기준으로 한다.
 
@@ -12,6 +12,52 @@
 - 의존성 최신화는 한 계층씩 적용하고 매 단계에서 동일 atomic task로 회귀 검증한다.
 - 원본 보존 상태와 현대화 실험을 Git branch로 분리한다.
 - MineSkynet의 차별점은 원본 환경 복제가 아니라 이기종 edge-cloud routing과 자체 통합 benchmark에 둔다.
+
+## 현재 실행 전략: legacy baseline 완료 후 계층별 현대화
+
+현재 환경에 임시 호환 패치를 계속 분산 추가하면 특정 구버전 조합에 더 강하게 결합되는 `dependency stitches`가 생길 수 있다. 반대로 baseline 검증 전에 모든 의존성을 동시에 갱신하면 회귀 원인을 분리할 수 없다. 따라서 다음 두 단계를 명확히 분리한다.
+
+### 단계 A. 최소 방어코드로 legacy baseline 완료
+
+- [ ] Mineflayer `/start`의 중앙 진입점 한 곳에서 chunk 준비 완료 전 물리 실행을 보류
+- [ ] position·velocity의 `NaN`/무한대 감지와 명확한 진단 로그 추가
+- [ ] workaround를 skill별로 분산하거나 `node_modules`를 직접 수정하지 않음
+- [ ] raw `mineWoodLog` 나무 채굴 회귀 테스트
+- [ ] raw `craftCraftingTable` 제작대 제작 테스트
+- [ ] MineMA actor가 `mineWoodLog`를 선택하고 실제 나무를 채굴하는 end-to-end 테스트
+- [ ] MineMA actor가 `craftCraftingTable`을 선택하고 실제 제작대를 만드는 end-to-end 테스트
+- [ ] Minecraft·Mineflayer·MineMA·Odyssey 로그와 사용 버전 보존
+- [ ] 성공 상태를 `odyssey-legacy-baseline-1.19.4`와 같은 Git tag로 고정
+
+임시 방어코드는 아래 조건을 만족해야 한다.
+
+- bridge의 한 경계에서만 적용한다.
+- 적용 이유, 재현 조건, 제거 조건을 문서화한다.
+- 기능을 조용히 우회하지 않고 비정상 좌표를 로그에 남긴다.
+- 현대화 후 동일 문제가 재현되지 않으면 제거한다.
+
+### 단계 B. modern runtime으로 계층별 업데이트
+
+`experiment/modern-odyssey` 계열 branch에서 다음 순서로 한 계층씩 갱신한다. 여기서 최신화는 모든 패키지의 무조건적인 최신 버전 설치가 아니라, 서로 공식 지원되는 안정 버전 조합을 선택하는 것을 의미한다.
+
+- [ ] 1단계: Minecraft 1.19.4를 유지한 채 Mineflayer·minecraft-protocol·prismarine-physics 갱신
+- [ ] 2단계: pathfinder·tool·collectblock·PVP·Hawkeye plugin 호환 수정
+- [ ] 3단계: 지원되는 Node.js LTS 선택, npm lockfile 재생성 및 `npm ci` 검증
+- [ ] 4단계: Minecraft·Fabric Loader·Fabric API·server mod·Java를 하나의 호환 묶음으로 갱신
+- [ ] 5단계: Odyssey Python·LangChain·Chroma·sentence-transformer 계층 갱신
+- [ ] 6단계: MineMA Backend의 PyTorch·Transformers·FastAPI 계층 갱신
+- [ ] 임시 legacy workaround의 필요 여부 재검증 및 불필요한 코드 제거
+- [ ] `legacy-reproduction`과 `modern-mineskynet` 두 실행 profile 문서화
+
+각 단계가 끝날 때마다 아래 회귀 테스트를 모두 통과해야 다음 계층으로 진행한다.
+
+1. bot 접속 30초 유지 및 모든 좌표 유한값 확인
+2. raw 나무 채굴 및 인벤토리 증가
+3. raw 제작대 제작 및 인벤토리 증가
+4. MineMA actor 나무 채굴
+5. MineMA actor 제작대 제작
+
+한 번에 여러 계층을 갱신하지 않는다. 실패한 최초 단계의 dependency diff와 로그를 남긴 뒤 해당 계층에서 원인을 해결한다.
 
 ## 오늘 작업: 2026-07-30
 
@@ -90,12 +136,12 @@ odyssey-mc  | [23:05:33] [Server thread/INFO]: bot joined the game
   - `mineflayer-collectblock`의 아이템 드롭 감지 반경을 현실적인 범위로 보정
   - `scripts/smoke_test_mine_wood.py`에서 `oak_log` 인벤토리 수량 증가 확인
   - 결과: `PASS: mineWoodLog collected at least one wood log`
-- [ ] 원본 임베딩 모델 `paraphrase-multilingual-MiniLM-L12-v2` 다운로드
+- [x] 원본 임베딩 모델 `paraphrase-multilingual-MiniLM-L12-v2` 다운로드 및 384차원 embedding 생성 검증
 - [x] LLM Backend 전용 Conda Python 3.10 환경 `LLM-Backend/.venv` 생성
-- [~] MineMA-8B-v3 모델 다운로드 진행 중 (공식 revision `126a11c`, 완료 용량 약 16.1GB)
-- [ ] LLM Backend의 `llama3_8b_v3` endpoint 기동
-- [~] `/ping` 성공, 모델 단일 추론 요청 대기
-- [ ] Odyssey 설정에 Minecraft·Node·LLM·embedding endpoint 연결
+- [x] MineMA-8B-v3 모델 다운로드 및 4개 safetensors shard 검증 (공식 revision `126a11c`, 약 16.1GB)
+- [x] LLM Backend의 `llama3_8b_v3` endpoint 기동
+- [x] `/ping` 및 MineMA 단일 추론 성공 (`Pickaxe`, VRAM 약 15.8GiB)
+- [x] Odyssey 설정에 Minecraft·Node·LLM·embedding endpoint 연결 및 MineMA wrapper 호출 성공
 - [ ] 나무 채굴용 최소 성공 판정 추가
 - [ ] MineMA actor를 통한 `mineWoodLog` 선택 확인
 - [ ] 실제 나무 블록 1개 채굴 및 인벤토리 증가 확인
@@ -137,12 +183,26 @@ odyssey-mc  | [23:05:33] [Server thread/INFO]: bot joined the game
 - [x] 현대화 실험 branch `experiment/modern-odyssey` 분리
 - [x] Minecraft 1.19.4·Fabric Loader 0.15.11·Java 17 서버 조합 고정 및 Mineflayer 접속 검증
 - [x] 모델을 제외한 raw `mineWoodLog` 행동 계층 검증
+- [ ] Mineflayer 재접속 시 chunk/물리 준비 순서를 보장하는 중앙 방어코드 적용
 - [ ] MineMA-8B-v3 단일 actor 재현
 - [~] 나무 채굴 atomic task 성공: raw skill 완료, MineMA actor end-to-end 대기
-- [ ] 작업대 제작 공식 subgoal 성공
+- [ ] raw 작업대 제작 및 MineMA 작업대 제작 subgoal 성공
 - [ ] 재현 절차와 원본 대비 호환성 수정 목록 확정
+- [ ] legacy baseline commit/tag 고정
 
 완료 조건: 현재 환경에서 Odyssey의 핵심 동작을 반복 실행할 수 있고, 사용 버전·호환성 수정·로그가 보존된다.
+
+### M0.5. 의존성 현대화와 dual runtime 확립
+
+- [ ] legacy baseline과 분리된 modern runtime branch 확인
+- [ ] Node/Mineflayer 계층 현대화 및 atomic task 회귀 검증
+- [ ] Minecraft/Fabric/mod/Java 호환 묶음 현대화 및 회귀 검증
+- [ ] Odyssey Python retrieval 계층 현대화 및 회귀 검증
+- [ ] MineMA Backend 추론 계층 현대화 및 회귀 검증
+- [ ] legacy 전용 workaround 제거 가능성 검토
+- [ ] `legacy-reproduction`과 `modern-mineskynet`의 버전 matrix 및 실행법 작성
+
+완료 조건: 원본 비교용 legacy profile과 실제 MineSkynet 실험용 modern profile이 모두 재현 가능하며, 동일 atomic test suite 결과로 현대화에 따른 동작 변화를 설명할 수 있다.
 
 ### M1. Local actor 교체 가능성 검증
 
@@ -249,7 +309,7 @@ retry/replan 횟수:
 
 ## 현재 장애 요인 및 주의사항
 
-- MineMA-8B-v3는 다운로드 진행 중이며 임베딩 모델은 아직 준비되지 않았다.
+- MineMA-8B-v3와 임베딩 모델 다운로드 및 단일 추론·embedding 검증은 완료됐다.
 - LLM Backend는 Odyssey와 별도의 Python 환경으로 격리해야 한다.
 - LLM Backend 전용 환경은 `LLM-Backend/.venv`이며 Python 3.10.20, PyTorch 2.2.0+cu121, Transformers 4.43.3으로 고정했다.
 - LLM Backend 환경에서 RTX 3090, CUDA, BF16 지원과 포트 9999의 `/ping` 응답을 검증했다.
@@ -258,7 +318,9 @@ retry/replan 횟수:
 - `itzg/minecraft-server:latest`가 Java 25를 사용해 구 Mixin이 class-file version 69를 처리하지 못했다. Minecraft 1.19.4 서버는 `itzg/minecraft-server:java17`로 고정한다.
 - 서버 로그의 runner `Done`은 성공 표시가 아니다. Minecraft의 `Done (...)! For help, type "help"`와 컨테이너의 지속적인 `Up` 상태를 함께 확인한다.
 - 원본 Node 의존성의 넓은 버전 범위가 최신 패키지를 설치해 빌드 오류를 일으켜 Mineflayer 계열을 호환 버전으로 고정했다.
-- Node.js 22에서는 봇이 `Invalid move player packet received`로 종료됐다. Mineflayer 실행은 Odyssey 공식 문서와 동일한 Node.js 20.13.1로 고정한다.
+- Mineflayer는 baseline 동안 Node.js 20.13.1로 고정하지만, `Invalid move player packet received`는 Node 20에서도 재현됐으므로 Node 버전만의 문제로 간주하지 않는다.
+- 재현 결과 저장 위치 `(424.5, 75, -41.5)`에서 접속한 `bot`의 첫 물리 계산 후 x·z 좌표가 `NaN`으로 변했고, 해당 position packet을 서버가 거부했다. 월드 스폰으로 재설정한 뒤 순정 Mineflayer bot은 안정적으로 유지됐다.
+- 현재 우선 가설은 낮은 view distance에서 저장 위치의 chunk가 준비되기 전에 구버전 `prismarine-physics`가 시작되는 문제다. 중앙 chunk-readiness/finite-coordinate guard로 baseline을 완료한 후 modern branch에서 라이브러리 갱신으로 제거 가능성을 검증한다.
 - Raspberry Pi에서는 Minecraft 서버가 아니라 headless Mineflayer executor와 경량 추론만 실행한다.
 
 ## 실행 명령 모음
@@ -344,7 +406,7 @@ hf download Aiwensile2/MineMA-8B \
 
 ### C. LLM Backend 실행 및 확인
 
-현재는 빈 모델 설정으로 `/ping`까지만 검증됐다. MineMA 다운로드와 `conf/config.json`의 모델 경로 설정이 끝난 뒤 실행한다.
+MineMA 다운로드, `conf/config.json` 모델 경로 등록, `/ping`과 `llama3_8b_v3` 단일 추론까지 검증됐다.
 
 #### 터미널 4: LLM Backend
 
@@ -361,11 +423,12 @@ curl --fail http://127.0.0.1:9999/ping
 nvidia-smi
 ```
 
-`/ping` 성공 응답은 `{"data":"pong!"}`이다. MineMA 단일 추론 요청 명령은 모델 로드 검증 후 추가한다.
+`/ping` 성공 응답은 `{"data":"pong!"}`이다. MineMA 단일 추론과 Odyssey wrapper 연결도 완료됐으며, 다음 검증 대상은 실제 actor skill 선택이다.
 
 ## 다음 작업
 
-1. 진행 중인 MineMA-8B-v3 다운로드를 완료하고 체크포인트 파일을 검증한다.
-2. 원본 embedding 모델을 준비한다.
-3. 별도 Conda 환경에서 LLM Backend의 `llama3_8b_v3` endpoint를 실행한다.
-4. Odyssey actor를 연결해 동일 나무 채굴 태스크의 end-to-end 성공을 검증한다.
+1. Mineflayer `/start`에 중앙 chunk-readiness 및 finite-coordinate 방어를 추가한다.
+2. raw 나무 채굴과 제작대 제작 smoke test를 완료한다.
+3. MineMA actor 나무 채굴과 제작대 제작 end-to-end 테스트를 완료한다.
+4. legacy baseline의 로그·버전·재현 명령을 보존하고 commit/tag로 고정한다.
+5. modern runtime branch에서 계층별 의존성 업데이트와 동일 회귀 테스트를 시작한다.
