@@ -19,10 +19,10 @@
 
 ### 단계 A. 최소 방어코드로 legacy baseline 완료
 
-- [ ] Mineflayer `/start`의 중앙 진입점 한 곳에서 chunk 준비 완료 전 물리 실행을 보류
-- [ ] position·velocity의 `NaN`/무한대 감지와 명확한 진단 로그 추가
-- [ ] workaround를 skill별로 분산하거나 `node_modules`를 직접 수정하지 않음
-- [ ] raw `mineWoodLog` 나무 채굴 회귀 테스트
+- [x] Mineflayer `/start`의 중앙 진입점 한 곳에서 chunk 준비 완료 전 물리 실행을 보류
+- [x] position·velocity의 `NaN`/무한대 감지와 명확한 진단 로그 추가
+- [x] workaround를 skill별로 분산하거나 `node_modules`를 직접 수정하지 않음
+- [x] raw `mineWoodLog` 나무 채굴 회귀 테스트
 - [ ] raw `craftCraftingTable` 제작대 제작 테스트
 - [ ] MineMA actor가 `mineWoodLog`를 선택하고 실제 나무를 채굴하는 end-to-end 테스트
 - [ ] MineMA actor가 `craftCraftingTable`을 선택하고 실제 제작대를 만드는 end-to-end 테스트
@@ -118,7 +118,8 @@
 - [x] 서버 로그에서 Minecraft의 `Done (9.114s)! For help, type "help"` 확인
 - [x] Fabric loader와 서버 모드가 오류 없이 로드되는지 확인
     - 서버 실행
-        cd ~/Documents/Odyssey/Odyssey
+        cd ~/Documents/MineSkynet
+        cd Odyssey
         docker compose up -d
         docker compose ps
         docker compose logs -f mc
@@ -183,7 +184,7 @@ odyssey-mc  | [23:05:33] [Server thread/INFO]: bot joined the game
 - [x] 현대화 실험 branch `experiment/modern-odyssey` 분리
 - [x] Minecraft 1.19.4·Fabric Loader 0.15.11·Java 17 서버 조합 고정 및 Mineflayer 접속 검증
 - [x] 모델을 제외한 raw `mineWoodLog` 행동 계층 검증
-- [ ] Mineflayer 재접속 시 chunk/물리 준비 순서를 보장하는 중앙 방어코드 적용
+- [x] Mineflayer 재접속 시 chunk/물리 준비 순서를 보장하는 중앙 방어코드 적용
 - [ ] MineMA-8B-v3 단일 actor 재현
 - [~] 나무 채굴 atomic task 성공: raw skill 완료, MineMA actor end-to-end 대기
 - [ ] raw 작업대 제작 및 MineMA 작업대 제작 subgoal 성공
@@ -321,6 +322,7 @@ retry/replan 횟수:
 - Mineflayer는 baseline 동안 Node.js 20.13.1로 고정하지만, `Invalid move player packet received`는 Node 20에서도 재현됐으므로 Node 버전만의 문제로 간주하지 않는다.
 - 재현 결과 저장 위치 `(424.5, 75, -41.5)`에서 접속한 `bot`의 첫 물리 계산 후 x·z 좌표가 `NaN`으로 변했고, 해당 position packet을 서버가 거부했다. 월드 스폰으로 재설정한 뒤 순정 Mineflayer bot은 안정적으로 유지됐다.
 - 현재 우선 가설은 낮은 view distance에서 저장 위치의 chunk가 준비되기 전에 구버전 `prismarine-physics`가 시작되는 문제다. 중앙 chunk-readiness/finite-coordinate guard로 baseline을 완료한 후 modern branch에서 라이브러리 갱신으로 제거 가능성을 검증한다.
+- 중앙 guard 적용 후 soft reset, hard reset+position 복원, 30초 이상 접속 유지와 raw `mineWoodLog` 회귀 테스트를 통과했다. 첫 회귀 시도는 Creeper 사망으로 timeout됐고, peaceful·낮 조건에서 재실행해 `oak_log: 1`을 확인했다.
 - Raspberry Pi에서는 Minecraft 서버가 아니라 headless Mineflayer executor와 경량 추론만 실행한다.
 
 ## 실행 명령 모음
@@ -332,7 +334,8 @@ retry/replan 횟수:
 #### 터미널 1: Minecraft 서버 및 로그
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
+cd ~/Documents/MineSkynet
+cd Odyssey
 docker compose up -d
 docker compose ps
 docker compose logs -f mc
@@ -341,14 +344,16 @@ docker compose logs -f mc
 로그 화면은 `Ctrl+C`로 종료해도 컨테이너가 계속 실행된다. 서버까지 중지하려면 다음을 실행한다.
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
+cd ~/Documents/MineSkynet
+cd Odyssey
 docker compose stop mc
 ```
 
 #### 터미널 2: Mineflayer bridge
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey/odyssey/env/mineflayer
+cd ~/Documents/MineSkynet
+cd Odyssey/odyssey/env/mineflayer
 nvm use 20.13.1
 node --version
 node index.js 3000
@@ -373,8 +378,9 @@ curl -X POST http://127.0.0.1:3000/start \
 응답과 Minecraft 로그의 `bot joined the game`을 확인한 뒤, 같은 터미널에서 raw 나무 채굴 테스트를 실행한다.
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
-conda activate /home/pluto2479/Documents/Odyssey/Odyssey/.venv
+cd ~/Documents/MineSkynet
+cd Odyssey
+conda activate ./.venv
 python scripts/smoke_test_mine_wood.py
 ```
 
@@ -385,20 +391,22 @@ python scripts/smoke_test_mine_wood.py
 다운로드 용량을 1초 간격으로 확인한다.
 
 ```bash
-watch -n 1 'du -sh ~/Documents/Odyssey/LLM-Backend/models/MineMA-8B'
+cd ~/Documents/MineSkynet
+watch -n 1 'du -sh ./LLM-Backend/models/MineMA-8B'
 ```
 
 다운로드 프로세스가 중단됐을 때만 아래 명령으로 이어받는다. 여러 터미널에서 동시에 실행하지 않는다.
 
 ```bash
-cd ~/Documents/Odyssey/LLM-Backend
-conda activate /home/pluto2479/Documents/Odyssey/LLM-Backend/.venv
-HF_HOME=~/Documents/Odyssey/LLM-Backend/.cache/huggingface \
+cd ~/Documents/MineSkynet
+cd LLM-Backend
+conda activate ./.venv
+HF_HOME=./.cache/huggingface \
 HF_HUB_DISABLE_XET=1 \
 hf download Aiwensile2/MineMA-8B \
   --revision 126a11c79009fa7ea19aed2aa3a959f0929afbb2 \
   --include 'MineMA-3-8b-v3/*' \
-  --local-dir ~/Documents/Odyssey/LLM-Backend/models/MineMA-8B \
+  --local-dir ./models/MineMA-8B \
   --max-workers 4
 ```
 
@@ -411,9 +419,10 @@ MineMA 다운로드, `conf/config.json` 모델 경로 등록, `/ping`과 `llama3
 #### 터미널 4: LLM Backend
 
 ```bash
-cd ~/Documents/Odyssey/LLM-Backend
-conda activate /home/pluto2479/Documents/Odyssey/LLM-Backend/.venv
-HF_HOME=~/Documents/Odyssey/LLM-Backend/.cache/huggingface python main.py
+cd ~/Documents/MineSkynet
+cd LLM-Backend
+conda activate ./.venv
+HF_HOME=./.cache/huggingface python main.py
 ```
 
 #### 터미널 5: Backend 상태 확인

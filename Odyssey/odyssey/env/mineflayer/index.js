@@ -22,6 +22,158 @@ const app = express();
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: false }));
 
+const STARTUP_CHUNK_TIMEOUT_MS = 10000;
+const STARTUP_PHYSICS_PROBE_MS = 500;
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function waitForBotEvent(bot, eventName, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            bot.removeListener(eventName, onEvent);
+            reject(
+                new Error(
+                    `[startup-guard] Timed out waiting for ${eventName}`
+                )
+            );
+        }, timeoutMs);
+        function onEvent(...args) {
+            clearTimeout(timeout);
+            resolve(args);
+        }
+        bot.once(eventName, onEvent);
+    });
+}
+
+function isFiniteVector(vector) {
+    return (
+        vector &&
+        Number.isFinite(vector.x) &&
+        Number.isFinite(vector.y) &&
+        Number.isFinite(vector.z)
+    );
+}
+
+function formatVector(vector) {
+    if (!vector) return "(missing)";
+    return `(${vector.x}, ${vector.y}, ${vector.z})`;
+}
+
+function localCollisionBlocksLoaded(bot) {
+    if (!bot.entity || !isFiniteVector(bot.entity.position)) return false;
+
+    // prismarine-physics can inspect neighboring blocks while resolving a
+    // collision. Checking the feet and the block below in a 3x3 area also
+    // covers a player standing on a chunk boundary.
+    for (const yOffset of [-1, 0]) {
+        for (const xOffset of [-1, 0, 1]) {
+            for (const zOffset of [-1, 0, 1]) {
+                const position = bot.entity.position.offset(
+                    xOffset,
+                    yOffset,
+                    zOffset
+                );
+                if (bot.blockAt(position, false) === null) return false;
+            }
+        }
+    }
+    return true;
+}
+
+async function waitForLocalCollisionBlocks(bot, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (localCollisionBlocksLoaded(bot)) return;
+        await delay(50);
+    }
+    throw new Error(
+        `[startup-guard] Timed out waiting for collision blocks at ${formatVector(
+            bot.entity?.position
+        )}`
+    );
+}
+
+function installFiniteMotionGuard(bot) {
+    let lastFinitePosition = null;
+    let lastFiniteVelocity = null;
+    let startupFault = null;
+
+    function rememberFiniteState() {
+        if (
+            bot.entity &&
+            isFiniteVector(bot.entity.position) &&
+            isFiniteVector(bot.entity.velocity)
+        ) {
+            lastFinitePosition = bot.entity.position.clone();
+            lastFiniteVelocity = bot.entity.velocity.clone();
+        }
+    }
+
+    function recordFault(source, position, velocity) {
+        if (startupFault) return;
+        startupFault = new Error(
+            `[startup-guard] Non-finite motion from ${source}: ` +
+                `position=${formatVector(position)}, ` +
+                `velocity=${formatVector(velocity)}`
+        );
+        console.error(startupFault.message);
+    }
+
+    // This event runs after physics simulation and before Mineflayer writes
+    // the movement packet. Restore the last valid state so a NaN packet never
+    // reaches the Minecraft server.
+    bot.on("physicsTick", () => {
+        if (
+            isFiniteVector(bot.entity?.position) &&
+            isFiniteVector(bot.entity?.velocity)
+        ) {
+            rememberFiniteState();
+            return;
+        }
+
+        recordFault("physicsTick", bot.entity?.position, bot.entity?.velocity);
+        bot.physicsEnabled = false;
+        bot.clearControlStates();
+        if (lastFinitePosition) {
+            bot.entity.position.set(
+                lastFinitePosition.x,
+                lastFinitePosition.y,
+                lastFinitePosition.z
+            );
+        }
+        if (lastFiniteVelocity) {
+            bot.entity.velocity.set(
+                lastFiniteVelocity.x,
+                lastFiniteVelocity.y,
+                lastFiniteVelocity.z
+            );
+        }
+    });
+
+    // A final protocol-boundary check also covers movement packets emitted by
+    // teleport handling rather than a normal physics tick.
+    const writePacket = bot._client.write.bind(bot._client);
+    bot._client.write = (name, packet) => {
+        if (
+            ["position", "position_look"].includes(name) &&
+            packet &&
+            ![packet.x, packet.y, packet.z].every(Number.isFinite)
+        ) {
+            recordFault(`outgoing ${name}`, packet, bot.entity?.velocity);
+            bot.physicsEnabled = false;
+            return;
+        }
+        return writePacket(name, packet);
+    };
+
+    return {
+        rememberFiniteState,
+        getStartupFault: () => startupFault,
+    };
+}
+
 app.post("/start", (req, res) => {
     if (bot) onDisconnect("Restarting bot");
     bot = null;
@@ -32,7 +184,11 @@ app.post("/start", (req, res) => {
         username: req.body.username,
         disableChatSigning: true,
         checkTimeoutInterval: 60 * 60 * 1000,
+        // A restored player can arrive before its surrounding chunks. Starting
+        // old prismarine-physics at that point can turn x/z into NaN.
+        physicsEnabled: false,
     });
+    const motionGuard = installFiniteMotionGuard(bot);
     bot.once("error", onConnectionFailed);
 
     // Event subscriptions
@@ -50,102 +206,144 @@ app.post("/start", (req, res) => {
     });
 
     bot.once("spawn", async () => {
-        bot.removeListener("error", onConnectionFailed);
-        let itemTicks = 1;
-        if (req.body.reset === "hard") {
-            bot.chat("/clear @s");
-            bot.chat("/kill @s");
-            const inventory = req.body.inventory ? req.body.inventory : {};
-            const equipment = req.body.equipment
-                ? req.body.equipment
-                : [null, null, null, null, null, null];
-            for (let key in inventory) {
-                bot.chat(`/give @s minecraft:${key} ${inventory[key]}`);
-                itemTicks += 1;
-            }
-            const equipmentNames = [
-                "armor.head",
-                "armor.chest",
-                "armor.legs",
-                "armor.feet",
-                "weapon.mainhand",
-                "weapon.offhand",
-            ];
-            for (let i = 0; i < 6; i++) {
-                if (i === 4) continue;
-                if (equipment[i]) {
-                    bot.chat(
-                        `/item replace entity @s ${equipmentNames[i]} with minecraft:${equipment[i]}`
-                    );
+        try {
+            let itemTicks = 1;
+            if (req.body.reset === "hard") {
+                bot.chat("/clear @s");
+                const respawned = waitForBotEvent(
+                    bot,
+                    "spawn",
+                    STARTUP_CHUNK_TIMEOUT_MS
+                );
+                bot.chat("/kill @s");
+                await respawned;
+                const inventory = req.body.inventory ? req.body.inventory : {};
+                const equipment = req.body.equipment
+                    ? req.body.equipment
+                    : [null, null, null, null, null, null];
+                for (let key in inventory) {
+                    bot.chat(`/give @s minecraft:${key} ${inventory[key]}`);
                     itemTicks += 1;
                 }
+                const equipmentNames = [
+                    "armor.head",
+                    "armor.chest",
+                    "armor.legs",
+                    "armor.feet",
+                    "weapon.mainhand",
+                    "weapon.offhand",
+                ];
+                for (let i = 0; i < 6; i++) {
+                    if (i === 4) continue;
+                    if (equipment[i]) {
+                        bot.chat(
+                            `/item replace entity @s ${equipmentNames[i]} with minecraft:${equipment[i]}`
+                        );
+                        itemTicks += 1;
+                    }
+                }
             }
-        }
 
-        if (req.body.position) {
-            bot.chat(
-                `/tp @s ${req.body.position.x} ${req.body.position.y} ${req.body.position.z}`
+            if (req.body.position) {
+                const teleported = waitForBotEvent(
+                    bot,
+                    "forcedMove",
+                    STARTUP_CHUNK_TIMEOUT_MS
+                );
+                bot.chat(
+                    `/tp @s ${req.body.position.x} ${req.body.position.y} ${req.body.position.z}`
+                );
+                await teleported;
+            }
+
+            // if iron_pickaxe is in bot's inventory
+            if (
+                bot.inventory
+                    .items()
+                    .find((item) => item.name === "iron_pickaxe")
+            ) {
+                bot.iron_pickaxe = true;
+            }
+
+            const { pathfinder } = require("mineflayer-pathfinder");
+            const tool = require("mineflayer-tool").plugin;
+            const collectBlock = require("mineflayer-collectblock").plugin;
+            const pvp = require("mineflayer-pvp").plugin;
+            const minecraftHawkEye = require("minecrafthawkeye");
+            bot.loadPlugin(pathfinder);
+            bot.loadPlugin(tool);
+            bot.loadPlugin(collectBlock);
+            bot.loadPlugin(pvp);
+            bot.loadPlugin(minecraftHawkEye);
+
+            // bot.collectBlock.movements.digCost = 0;
+            // bot.collectBlock.movements.placeCost = 0;
+
+            obs.inject(bot, [
+                OnChat,
+                OnError,
+                Voxels,
+                Status,
+                Inventory,
+                OnSave,
+                Chests,
+                BlockRecords,
+            ]);
+            skills.inject(bot);
+
+            if (req.body.spread) {
+                const spreadComplete = waitForBotEvent(
+                    bot,
+                    "forcedMove",
+                    STARTUP_CHUNK_TIMEOUT_MS
+                );
+                bot.chat(`/spreadplayers ~ ~ 0 300 under 80 false @s`);
+                await spreadComplete;
+            }
+
+            await waitForLocalCollisionBlocks(bot, STARTUP_CHUNK_TIMEOUT_MS);
+            motionGuard.rememberFiniteState();
+            console.log(
+                `[startup-guard] Collision blocks ready at ${formatVector(
+                    bot.entity.position
+                )}; enabling physics`
             );
+            bot.physicsEnabled = true;
+            await delay(STARTUP_PHYSICS_PROBE_MS);
+            if (motionGuard.getStartupFault()) {
+                throw motionGuard.getStartupFault();
+            }
+            bot.removeListener("error", onConnectionFailed);
+
+            await bot.waitForTicks(bot.waitTicks * itemTicks);
+            res.json(bot.observe());
+
+            initCounter(bot);
+            bot.chat("/gamerule keepInventory true");
+            bot.chat("/gamerule doDaylightCycle false");
+        } catch (error) {
+            onConnectionFailed(error);
         }
-
-        // if iron_pickaxe is in bot's inventory
-        if (
-            bot.inventory.items().find((item) => item.name === "iron_pickaxe")
-        ) {
-            bot.iron_pickaxe = true;
-        }
-
-        const { pathfinder } = require("mineflayer-pathfinder");
-        const tool = require("mineflayer-tool").plugin;
-        const collectBlock = require("mineflayer-collectblock").plugin;
-        const pvp = require("mineflayer-pvp").plugin;
-        const minecraftHawkEye = require("minecrafthawkeye");
-        bot.loadPlugin(pathfinder);
-        bot.loadPlugin(tool);
-        bot.loadPlugin(collectBlock);
-        bot.loadPlugin(pvp);
-        bot.loadPlugin(minecraftHawkEye);
-
-        // bot.collectBlock.movements.digCost = 0;
-        // bot.collectBlock.movements.placeCost = 0;
-
-        obs.inject(bot, [
-            OnChat,
-            OnError,
-            Voxels,
-            Status,
-            Inventory,
-            OnSave,
-            Chests,
-            BlockRecords,
-        ]);
-        skills.inject(bot);
-
-        if (req.body.spread) {
-            bot.chat(`/spreadplayers ~ ~ 0 300 under 80 false @s`);
-            await bot.waitForTicks(bot.waitTicks);
-        }
-
-        await bot.waitForTicks(bot.waitTicks * itemTicks);
-        res.json(bot.observe());
-
-        initCounter(bot);
-        bot.chat("/gamerule keepInventory true");
-        bot.chat("/gamerule doDaylightCycle false");
     });
 
     function onConnectionFailed(e) {
-        console.log(e);
+        console.error(e);
+        const failedBot = bot;
         bot = null;
-        res.status(400).json({ error: e });
+        if (failedBot) failedBot.end();
+        if (!res.headersSent) {
+            res.status(400).json({ error: e.message || String(e) });
+        }
     }
     function onDisconnect(message) {
-        if (bot.viewer) {
-            bot.viewer.close();
-        }
-        bot.end();
-        console.log(message);
+        const disconnectedBot = bot;
         bot = null;
+        if (!disconnectedBot) return;
+        if (disconnectedBot.viewer) {
+            disconnectedBot.viewer.close();
+        }
+        disconnectedBot.end();
+        console.log(message);
     }
 });
 

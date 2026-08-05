@@ -199,6 +199,10 @@ async function mineBlock(
     }
 
     const tempEvents = new TemporarySubscriber(bot);
+    let resolveItemDrop: () => void = () => {};
+    const itemDropDetected = new Promise<void>((resolve) => {
+        resolveItemDrop = resolve;
+    });
     tempEvents.subscribeTo("itemDrop", (entity: Entity) => {
         if (
             // Block drops receive a small random spawn offset. The original
@@ -208,21 +212,15 @@ async function mineBlock(
             1.5
         ) {
             options.targets.appendTarget(entity);
+            resolveItemDrop();
         }
     });
     try {
         await bot.dig(block);
-        // Waiting for items to drop
-        await new Promise<void>((resolve) => {
-            let remainingTicks = 10;
-            tempEvents.subscribeTo("physicTick", () => {
-                remainingTicks--;
-                if (remainingTicks <= 0) {
-                    tempEvents.cleanup();
-                    resolve();
-                }
-            });
-        });
+        // The block break acknowledgement can arrive before the spawned item
+        // entity. Wait for that event, with a bounded fallback for blocks that
+        // legitimately produce no collectable drop.
+        await Promise.race([itemDropDetected, bot.waitForTicks(40)]);
     } finally {
         tempEvents.cleanup();
     }

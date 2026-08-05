@@ -5,7 +5,11 @@
 - 상세 연구 설계: [MineSkynet_blueprint.md](MineSkynet_blueprint.md)
 - 진행 상황과 실행 명령: [MineSkynet_milestones.md](MineSkynet_milestones.md)
 
-아래 명령은 저장소가 `~/Documents/Odyssey`에 있다고 가정한다. 다른 위치에 설치했다면 경로를 맞게 변경한다.
+아래 명령은 각 터미널에서 먼저 저장소 루트로 이동한 뒤 실행한다. 최초 진입 경로를 제외한 저장소 내부 경로는 상대경로로 표기한다.
+
+```bash
+cd ~/Documents/MineSkynet
+```
 
 ## 1. 개요
 
@@ -73,7 +77,7 @@ Docker group은 사실상 root 수준 권한을 제공하므로 신뢰된 연구
 Odyssey Python 의존성은 system Python이나 Conda `base`에 설치하지 않고 저장소 내부 prefix로 격리한다.
 
 ```bash
-cd ~/Documents/Odyssey
+cd ~/Documents/MineSkynet
 conda create --prefix ./Odyssey/.venv python=3.10 pip -y
 conda activate ./Odyssey/.venv
 
@@ -86,7 +90,7 @@ pip install -e .
 ```bash
 conda config --env --set env_prompt '(MineSkynet) '
 conda deactivate
-conda activate ~/Documents/Odyssey/Odyssey/.venv
+conda activate ./.venv
 ```
 
 설치 결과를 확인한다.
@@ -97,7 +101,7 @@ which python
 python -c "import odyssey; print('Odyssey import OK')"
 ```
 
-예상 Python은 3.10이며 경로는 `~/Documents/Odyssey/Odyssey/.venv/bin/python`이다.
+예상 Python은 3.10이며 경로는 `Odyssey/.venv/bin/python`이다.
 
 Conda가 Anaconda channel 이용약관 동의를 요구하면 사용자가 직접 다음을 실행한다.
 
@@ -120,7 +124,8 @@ source ~/.bashrc
 프로젝트의 `.nvmrc`를 이용해 Node 버전을 선택하고 로컬 npm 의존성을 설치한다.
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
+cd ~/Documents/MineSkynet
+cd Odyssey
 nvm install
 nvm use
 node --version
@@ -142,7 +147,7 @@ npm install
 MineMA를 서비스하는 LLM Backend는 Odyssey 환경과 의존성이 다르므로 별도의 Conda prefix를 사용한다. 기존 환경이 없다면 다음과 같이 만든다.
 
 ```bash
-cd ~/Documents/Odyssey
+cd ~/Documents/MineSkynet
 conda create --prefix ./LLM-Backend/.venv python=3.10 pip -y
 conda activate ./LLM-Backend/.venv
 
@@ -164,7 +169,7 @@ MineMA 체크포인트를 받은 뒤 `LLM-Backend/conf/config.json`을 다음 �
 {
   "CUDA_VISIBLE_DEVICES": "0",
   "models": {
-    "llama3_8b_v3": "/home/pluto2479/Documents/Odyssey/LLM-Backend/models/MineMA-8B/MineMA-3-8b-v3"
+    "llama3_8b_v3": "./models/MineMA-8B/MineMA-3-8b-v3"
   },
   "port": 9999
 }
@@ -189,7 +194,7 @@ MineMA 체크포인트를 받은 뒤 `LLM-Backend/conf/config.json`을 다음 �
 다운로드한 mod JAR은 다음 디렉터리에 둔다.
 
 ```bash
-mkdir -p ~/Documents/Odyssey/Odyssey/runtime/minecraft/mods
+mkdir -p ./Odyssey/runtime/minecraft/mods
 ```
 
 확인할 파일:
@@ -207,7 +212,8 @@ Odyssey/runtime/minecraft/mods/
 ### 3.2 터미널 1: Minecraft 서버 실행
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
+cd ~/Documents/MineSkynet
+cd Odyssey
 docker compose up -d
 docker compose ps
 docker compose logs -f mc
@@ -224,7 +230,8 @@ Done (...)! For help, type "help"
 서버를 중지하거나 다시 시작하려면 다음을 사용한다.
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
+cd ~/Documents/MineSkynet
+cd Odyssey
 docker compose stop mc
 docker compose start mc
 ```
@@ -236,7 +243,8 @@ docker compose start mc
 새 터미널을 열어 Node 20을 선택한 뒤 bridge를 실행한다.
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey/odyssey/env/mineflayer
+cd ~/Documents/MineSkynet
+cd Odyssey/odyssey/env/mineflayer
 source ~/.nvm/nvm.sh
 nvm use 20.13.1
 node --version
@@ -250,9 +258,10 @@ node index.js 3000
 새 터미널에서 Backend 전용 Conda 환경을 활성화하고 포그라운드로 실행한다. 이 방식은 model load, HTTP 요청 및 오류 로그를 터미널에서 바로 확인할 수 있다.
 
 ```bash
-cd ~/Documents/Odyssey/LLM-Backend
-conda activate ~/Documents/Odyssey/LLM-Backend/.venv
-HF_HOME=~/Documents/Odyssey/LLM-Backend/.cache/huggingface python main.py
+cd ~/Documents/MineSkynet
+cd LLM-Backend
+conda activate ./.venv
+HF_HOME=./.cache/huggingface python main.py
 ```
 
 MineMA-8B-v3 가중치를 RTX 3090에 올리는 동안 잠시 기다린다. 다음 로그가 나타나야 9999 포트에서 요청을 받을 준비가 된 것이다.
@@ -300,7 +309,8 @@ curl --fail -X POST http://127.0.0.1:9999/llama3_8b_v3 \
 먼저 세 서비스가 준비됐는지 확인한다.
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
+cd ~/Documents/MineSkynet
+cd Odyssey
 docker compose ps
 curl --fail http://127.0.0.1:9999/ping
 ```
@@ -328,8 +338,9 @@ bot joined the game
 bot 접속이 유지되는 상태에서 터미널 4에 다음을 실행한다.
 
 ```bash
-cd ~/Documents/Odyssey/Odyssey
-conda activate ~/Documents/Odyssey/Odyssey/.venv
+cd ~/Documents/MineSkynet
+cd Odyssey
+conda activate ./.venv
 python scripts/smoke_test_mine_wood.py
 ```
 

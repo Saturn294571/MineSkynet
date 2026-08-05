@@ -81,14 +81,15 @@
 시스템 Python은 3.14이므로 Odyssey에 직접 패키지를 설치하지 않는다. Python 의존성은 다음 저장소 내부 Conda prefix에만 설치한다.
 
 ```text
-/home/pluto2479/Documents/Odyssey/Odyssey/.venv
+Odyssey/.venv
 ```
 
 환경 활성화 명령은 다음과 같다.
 
 ```bash
+cd ~/Documents/MineSkynet
 source ~/miniconda3/etc/profile.d/conda.sh
-conda activate /home/pluto2479/Documents/Odyssey/Odyssey/.venv
+conda activate ./Odyssey/.venv
 ```
 
 긴 prefix 대신 terminal prompt에 `(MineSkynet)`만 표시하도록 해당 환경에서 설정한다.
@@ -96,13 +97,21 @@ conda activate /home/pluto2479/Documents/Odyssey/Odyssey/.venv
 ```bash
 conda config --env --set env_prompt '(MineSkynet) '
 conda deactivate
-conda activate /home/pluto2479/Documents/Odyssey/Odyssey/.venv
+cd ~/Documents/MineSkynet
+conda activate ./Odyssey/.venv
 ```
 
 로그아웃하거나 새 terminal을 열면 Conda 환경은 자동 활성화되지 않는다. 다시 `source`와 `conda activate`를 수행한다. 편의를 위한 shell alias는 선택적으로 사용한다.
 
 ```bash
-alias mineskynet-env='conda activate /home/pluto2479/Documents/Odyssey/Odyssey/.venv'
+mineskynet-env() {
+  local project_root
+  project_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "MineSkynet 저장소 안에서 실행하세요." >&2
+    return 1
+  }
+  CONDA_ENV_PROMPT='(MineSkynet) ' conda activate "$project_root/Odyssey/.venv"
+}
 ```
 
 활성화 검증은 다음 두 명령으로 한다.
@@ -112,7 +121,7 @@ python --version
 which python
 ```
 
-예상 Python 경로는 `/home/pluto2479/Documents/Odyssey/Odyssey/.venv/bin/python`이다.
+예상 Python 경로는 저장소 루트 기준 `Odyssey/.venv/bin/python`이다.
 
 다음 원칙을 유지한다.
 
