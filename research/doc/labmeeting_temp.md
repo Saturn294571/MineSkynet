@@ -66,3 +66,37 @@
 
 # 8.6 랩미팅
 
+1) 현재 진행상황
+- 프로젝트에서 의존성 이슈가 너무 많아 보수 코드를 계속 짜는 것 보다 차라리 의존성 최신화 -> 이후 최신화된 버전 기준으로 보수 코드 패치 방향으로 결정
+    - 단, 조금 진행하다가 LoRA를 먼저 해보고 싶다는 생각에 연구 순서상으론 약간 다음인 파인튜닝 먼저 진행
+- 허깅페이스에서 데이터셋과 gemma 3 1b 다운로드
+- json 포맷에서 NaN은 읽히지 않아 전처리 필요. 또한 중복 데이터들이 있어 preprocessing.ipynb 생성
+- 전처리용 가상환경/커널 세팅; 학습 전용 콘다환경 세팅
+- train_row를 달리하며 128, 128 과적합(train_row=128,eval_row=128), 1k, 10k로 달리하며 파인튜닝 수행
+    - '제작대에 필요한 나무 판자 수는?' (정답 4개)에 대해 과적합, 1k는 통과; 나머지 128과 10k는 실패함
+    - 단일 질문 테스트이므로 확정할 순 없지만, 학습 규모에 따라 일관되게 성능향상은 가지지 않는 것으로 보임
+    - 다만 오딧세이의 mineMA 활용이 실제로 작업을 수행하는 actor 뿐만이 아닌, planner, reflector 등 여러 부분에서 쓰인다는 점. 그리고 현재 프로젝트 구상안은 actor 노드에겐 고도의 추론과 계획보단 매우 파편화된 subgoal에 대해 적절한 skill 선택을 주력으로 한다는 점에서 아쉬운 추론성능이 발목을 잡을지는 미지수.
+        - 따라서 도메인 특화 모델을 actor용 1b 기반, 도메인 지식/추론용으론 더 크고 똑똑한 모델 이런식으로 병행하는게 필요해보임
+        - 오딧세이의 in-context적 요소 또한 actor에게 기대하기보단 planner의 task allocation의 품질을 적응 시키는 방식으로 기대중
+{
+  "run_profile": "memorize_128",
+  "prompt": "In Minecraft, how many wooden planks are required to craft a crafting table?",
+  "expected_factual_answer": "4 wooden planks",
+  "base_answer": "You need **6** wooden planks to craft a crafting table in Minecraft. \n\n(1 wood plank x 6 = 6 planks)",
+  "adapter_answer": "The crafting table requires 4 wooden planks to craft it in Minecraft.",
+  "reload_inference_peak_vram_gib": 1.976
+}
+
+{
+  "run_profile": "pilot_1k",
+  "prompt": "In Minecraft, how many wooden planks are required to craft a crafting table?",
+  "expected_factual_answer": "4 wooden planks",
+  "base_answer": "You need **6** wooden planks to craft a crafting table in Minecraft. \n\n(1 wood plank x 6 = 6 planks)",
+  "adapter_answer": "To craft a crafting table in Minecraft, you need 4 wooden planks.",
+  "reload_inference_peak_vram_gib": 2.028
+}
+2) 다음 계획
+- INT4로 배포 후 BF16과의 출력정확도, 지연, peak vram을 비교
+- 오딧세이 actor adapter의 엔드포인트 설정
+- 현 작업 완료시 다시 의존성 현대화 작업 진행
+3) 피드백

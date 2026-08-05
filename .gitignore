@@ -45,6 +45,9 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
+MineMA-Model-Fine-Tuning/models/
+research/mineskynet_finetuning/data/
+research/mineskynet_finetuning/outputs/
 nosetests.xml
 coverage.xml
 *.cover
