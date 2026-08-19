@@ -1,4 +1,6 @@
 # 7.27 랩미팅
+
+> 이 문서는 날짜별 구두 논의의 원문 기록이며 현재 설계·상태의 기준 문서가 아니다. 현재 판단은 [`PROMPT.md`](../PROMPT.md), [`MineSkynet_blueprint.md`](./MineSkynet_blueprint.md)와 [`milestone_index.md`](./milestone_goal/milestone_index.md)를 따른다. 아래 과거 표현은 당시 맥락 보존을 위해 수정하지 않는다.
 - ODYSSEY: Empowering Minecraft Agents with Open-World Skills
     - 문제 의식 : 많은 마크 에이전트 연구들이 테크트리(다이아 얻기 등)을 따르도록 설계됨. 이는 LLM의 능력을 제한함
     - 핵심 구성요소
