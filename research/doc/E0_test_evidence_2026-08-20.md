@@ -1,5 +1,7 @@
 # Gate E0 검사 증거 — 2026-08-20
 
+문서 역할: 모델과 planner를 제외한 Minecraft 실행 계층이 기존 Odyssey skill을 반복 실행하고 실패 뒤 복구할 수 있음을 입증하는 원시 증거다. Odyssey 전체 논문 재현을 의미하지 않는다.
+
 이 문서는 `e0-executor` 후보 환경에서 수행한 정적 검사와 실제 Minecraft 회귀 시험의 압축 증거다. 원시 world와 cache는 Git 밖의 `Odyssey/runtime/`에 유지한다.
 
 ## 환경 snapshot
@@ -43,4 +45,4 @@
 - `/step` process-level exception listener는 request-local bot을 사용하고 response `finish`/`close`에서 정리한다. 실패 후 bridge 생존 회귀를 통과했다.
 - 새 offline server의 hard reset timeout은 잘못된 online OP UUID가 원인이었다. Compose가 추적 가능한 offline UUID `OPS_FILE`을 사용하도록 수정했다.
 - 최종 raw 결과는 `Odyssey/odyssey/env/results/e0/20260820T021925+0900/`에 있다. `environment.json`, 실행별 JSON 20개, `summary.json`, `minecraft_latest.log`를 포함하며 local runtime 결과라 Git에서 제외된다.
-- 성공 commit/tag는 아직 만들지 않았다. 미커밋 변경 범위 검토와 tag 생성은 사용자 판단이 필요하다.
+- 검사 당시에는 성공 commit/tag를 만들지 않았다. 이후 변경을 `a157205` (`E0 finished`)에 커밋하고 `odyssey-modernized-executor-1.19.4` annotated tag로 로컬·원격에 고정했다.

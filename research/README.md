@@ -1,9 +1,16 @@
 # MineSkynet 연구 환경 안내
 
-이 문서는 MineSkynet 연구의 간단한 개요와 현재 검증된 Odyssey 기반 Minecraft 실행 환경을 정리한다.
+문서 역할: 처음 온 연구자에게 프로젝트의 목적과 검증된 실행 방법을 안내한다. 연구 판단이나 현재 작업 순서는 이 문서에서 중복 관리하지 않는다.
 
-- 상세 연구 설계: [MineSkynet_blueprint.md](MineSkynet_blueprint.md)
-- 진행 상황과 실행 명령: [MineSkynet_milestones.md](MineSkynet_milestones.md)
+## 문서 읽는 순서
+
+1. [PROMPT.md](PROMPT.md): 프로젝트 전체의 다섯 가지 판단 원칙
+2. [MineSkynet_blueprint.md](doc/MineSkynet_blueprint.md): 연구 질문, 제안 구조와 평가 방법
+3. [milestone_index.md](doc/milestone_goal/milestone_index.md): 현재 상태와 바로 다음 단계
+4. [modernization_milestone.md](doc/milestone_goal/modernization_milestone.md): Odyssey 재현·현대화 완료 조건
+5. [research_milestone.md](doc/milestone_goal/research_milestone.md): modernized 기반의 MineSkynet 연구 단계
+
+구현을 확인할 때만 [paper_code_dependency_map.md](doc/paper_code_dependency_map.md)를 보고, 실행 근거가 필요할 때는 [E0 증거](doc/E0_test_evidence_2026-08-20.md)로 내려간다.
 
 아래 명령은 각 터미널에서 먼저 저장소 루트로 이동한 뒤 실행한다. 최초 진입 경로를 제외한 저장소 내부 경로는 상대경로로 표기한다.
 
@@ -112,7 +119,7 @@ conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 
 ### 2.3 Node.js 20과 Mineflayer 의존성
 
-Mineflayer 4.8.1은 이 프로젝트에서 Node.js 20.13.1로 검증됐다. Node.js 22에서는 bot이 `Invalid move player packet received`로 종료됐으므로 사용하지 않는다.
+현재 `package-lock.json`은 Mineflayer 4.25.0과 관련 Prismarine dependency를 고정하며 Node.js 20.13.1, npm 10.5.2에서 E0 회귀를 통과했다. Node·Mineflayer·minecraft-data는 protocol/physics 동작이 함께 바뀔 수 있으므로 개별적으로 올리지 않고 lock 전체를 회귀한다.
 
 `nvm`이 없다면 사용자 계정에 설치한다.
 
@@ -179,25 +186,31 @@ MineMA 체크포인트를 받은 뒤 `LLM-Backend/conf/config.json`을 다음 �
 
 ## 3. Docker와 Mineflayer 서버 설정
 
-### 3.1 Minecraft Fabric mod 준비
+### 3.1 기본 mod-free executor와 optional legacy pause bundle
 
-현재 Docker 구성은 다음 조합으로 검증됐다.
+현재 modernized executor의 기본 조건은 다음과 같다.
 
 - Minecraft 1.19.4
 - Java 17
 - Fabric Loader 0.15.11
+- 외부 mod JAR 없음
+
+이 조건에서 `/health`, `/start`, `/step`만 사용한 finite-position, 원목 채집과 작업대 제작 회귀를 통과했다. 따라서 `Odyssey/runtime/minecraft/mods`는 비어 있어도 된다.
+
+기존 Python `VoyagerEnv`의 `/pause` 경로를 조사할 때만 다음 legacy bundle이 필요하다.
+
 - Fabric API 0.87.2+1.19.4
 - Multiplayer Server Pause 1.3.1
 - iChunUtil 1.0.2
 - CompleteConfig 2.3.1
 
-다운로드한 mod JAR은 다음 디렉터리에 둔다.
+optional JAR을 둘 디렉터리는 다음과 같다.
 
 ```bash
 mkdir -p ./Odyssey/runtime/minecraft/mods
 ```
 
-확인할 파일:
+legacy pause 경로에서만 확인할 파일:
 
 ```text
 Odyssey/runtime/minecraft/mods/
@@ -207,7 +220,7 @@ Odyssey/runtime/minecraft/mods/
 └── completeconfig-2.3.1.jar
 ```
 
-이 JAR들은 저장소에서 재배포하지 않으므로 각 mod의 공식 배포처에서 정확한 Minecraft 1.19.4 호환 버전을 받아야 한다. `runtime/`은 Minecraft world와 다운로드된 JAR을 포함하므로 Git에 커밋하지 않는다.
+이 JAR들은 저장소에서 재배포하지 않으므로 필요할 때 각 mod의 공식 배포처에서 정확한 Minecraft 1.19.4 호환 버전을 받아야 한다. `runtime/`은 Minecraft world와 다운로드된 JAR을 포함하므로 Git에 커밋하지 않는다. 현재 `bridge.py`의 일반 Odyssey 경로에는 `/pause` 호출이 남아 있으므로, end-to-end 연결 전 이를 optional adapter로 격리해야 한다.
 
 ### 3.2 터미널 1: Minecraft 서버 실행
 
