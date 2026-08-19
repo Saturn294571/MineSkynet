@@ -31,6 +31,19 @@ def post_json(url: str, payload: dict, timeout: int) -> dict:
         return json.load(response)
 
 
+def get_json(url: str, timeout: int) -> dict:
+    with request.urlopen(url, timeout=timeout) as response:
+        return json.load(response)
+
+
+def event_values(observation: list, event_name: str) -> list:
+    return [
+        event.get(event_name, event) if isinstance(event, dict) else event
+        for event_type, event in observation
+        if event_type == event_name
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bridge", default="http://127.0.0.1:3000")
@@ -42,6 +55,7 @@ def main() -> int:
             read_text(CONTROL_PRIMITIVES / "exploreUntil.js"),
             read_text(CONTROL_PRIMITIVES / "mineBlock.js"),
             read_text(CONTROL_PRIMITIVES / "craftItem.js"),
+            read_text(CONTROL_PRIMITIVES / "craftHelper.js"),
             read_text(SKILL_ROOT / "primitive" / "getPlanksCount.js"),
             read_text(SKILL_ROOT / "compositional" / "mineWoodLog.js"),
             read_text(SKILL_ROOT / "compositional" / "craftWoodenPlanks.js"),
@@ -54,6 +68,7 @@ def main() -> int:
     }
 
     try:
+        before_health = get_json(f"{args.bridge.rstrip('/')}/health", 5)
         observation = post_json(
             f"{args.bridge.rstrip('/')}/step", payload, args.timeout
         )
@@ -73,25 +88,34 @@ def main() -> int:
         print("FAIL: the bridge returned no final observe event")
         return 1
 
-    inventory = observe_events[-1].get("inventory", {})
-    crafting_tables = inventory.get("crafting_table", 0)
+    before_inventory = before_health.get("bot", {}).get("inventory", {})
+    after_inventory = observe_events[-1].get("inventory", {})
+    before_crafting_tables = before_inventory.get("crafting_table", 0)
+    crafting_tables = after_inventory.get("crafting_table", 0)
+    delta = crafting_tables - before_crafting_tables
     materials = {
         name: count
-        for name, count in inventory.items()
+        for name, count in after_inventory.items()
         if name.endswith("_log") or name.endswith("_planks")
     }
     print(
         json.dumps(
             {
+                "before_inventory": before_inventory,
+                "after_inventory": after_inventory,
                 "crafting_table": crafting_tables,
+                "crafting_table_delta": delta,
                 "materials": materials,
-                "inventory": inventory,
+                "onChat": event_values(observation, "onChat"),
+                "onError": event_values(observation, "onError"),
+                "onSave": event_values(observation, "onSave"),
+                "final_status": observe_events[-1].get("status", {}),
             },
             indent=2,
         )
     )
-    if crafting_tables < 1:
-        print("FAIL: no crafting table was produced")
+    if delta < 1:
+        print("FAIL: crafting table inventory did not increase")
         return 1
 
     print("PASS: craftCraftingTable produced at least one crafting table")

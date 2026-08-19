@@ -2,7 +2,7 @@
 - MineSkynet : heterogeneous Edge-Cloud Minecraft Multi-Agent framework (가제)
 
 작성일: 2026-07-18  
-최종 갱신: 2026-07-30  
+최종 갱신: 2026-08-19
 용도: 새 세션 인계 및 연구 방향 고정
 
 ## 1. 현재 확정된 연구 방향
@@ -50,6 +50,25 @@
 ```
 
 여기서 `agent`, `bot`, `worker`, `drone`는 한 Minecraft avatar와 그 avatar를 제어하는 local process의 묶음을 뜻한다. 단순 compute worker나 하나의 모델을 분산 추론하는 node를 뜻하지 않는다.
+
+### 실행 profile과 기능 보존 원칙
+
+단계별 MVP에서 기능을 비활성화하는 것과 선행연구의 기능을 삭제하는 것을 구분한다.
+
+| profile | 연구상 의미 | skill library 동작 |
+|---|---|---|
+| `e0-executor` | 모델 없는 Minecraft 실행 계층 | 두 raw skill, 쓰기 금지 |
+| `e1-stub` | controller·registry·verifier 계약 | 두 fixed candidate, 쓰기 금지 |
+| `e2-actor-fixed` | 실제 bounded actor 평가 | fixed candidate 선택, 쓰기 금지 |
+| `odyssey-retrieval` | semantic retrieval 복원 | 고정 40+183 skill, top-5 검색 |
+| `odyssey-legacy` | 공개 Odyssey 논문 baseline | 고정 library, planner–actor–critic, MineMA |
+| `voyager-lifelong` | Voyager lifelong-learning baseline | curriculum, code 생성·수정·검증·동적 commit·재검색 |
+| `odyssey-full` | Odyssey 구성에 능동 skill lifecycle을 결합한 확장 실험 | 223-skill seed + versioned 생성·수정·축적·재사용 |
+| `mineskynet-core` | 제안 시스템의 기본 profile | 검증된 registry를 읽는 bounded edge actor; 동적 쓰기는 기본 비활성화 |
+
+Voyager와 공개 Odyssey를 같은 baseline으로 부르지 않는다. Voyager의 핵심은 automatic curriculum이 과제를 제안하고, 생성된 JavaScript를 환경 feedback·execution error·self-verification으로 수정한 뒤 성공한 프로그램만 skill library에 저장하는 과정이다. 반면 공개 Odyssey는 미리 구축한 40개 primitive와 183개 compositional skill, recursive prerequisite 실행과 semantic retrieval을 중심으로 한다. 저장소에 Voyager 계열 `add_new_skill()` 구현이 남아 있어도 main Odyssey learning loop에서 호출이 비활성화된 상태라면 `odyssey-legacy`의 필수 동작으로 간주하지 않는다.
+
+기능을 보존한다는 것은 특정 package를 무조건 영구 고정한다는 뜻은 아니다. Sentence Transformer encoder, vector retrieval, dynamic add/delete/persist, code parsing, self-verification과 checkpoint lifecycle 같은 contract를 먼저 보존한다. Chroma·LangChain처럼 신뢰받고 공개 코드가 사용하는 외부 구현을 기본값으로 유지하며, 직접 구현이나 다른 library는 동일 결과와 lifecycle parity를 통과하고 디버깅·성능·운영 면의 이득이 측정될 때만 채택한다.
 
 ## 3. 보유 자원과 예상 역할
 
@@ -270,6 +289,8 @@ execution result
 - observation, inventory delta, 실행 시간, 오류와 local validation 결과를 Shared State Service에 보고한다.
 - 다른 actor의 전체 대화나 전역 planning context를 항상 공유받지는 않는다.
 
+이 read-only bounded actor 경로는 `mineskynet-core`의 기본이다. 능동 skill 학습은 edge actor마다 임의로 수행하지 않고, `voyager-lifelong` 또는 `odyssey-full`에서만 별도의 강한 model worker와 격리된 execution sandbox를 통해 수행한다. 생성 skill은 quarantine 상태에서 deterministic state delta와 self-verification을 통과해야 하며, code·description·embedding·parent skill·model/prompt revision·world/commit·version을 함께 기록한 뒤에만 공유 registry로 승격한다.
+
 Cloud–edge 경계는 자유 형식 prompt가 아니라 versioned structured task protocol로 고정한다.
 
 ```json
@@ -285,7 +306,7 @@ Cloud–edge 경계는 자유 형식 prompt가 아니라 versioned structured ta
 }
 ```
 
-M0에서는 원본 연구의 기능적 baseline 확인을 위해 RTX 3090에서 Odyssey planner–actor–reflector 전체를 먼저 재현한다. 이후 MineSkynet 단계에서 planner와 reflector를 cloud-tier control plane으로 분리하고 edge에는 Actor Runtime만 남긴다.
+실행 순서는 E0의 raw executor, E1의 stub controller, E2의 fixed-candidate actor를 먼저 고정한 뒤 E3에서 공개 Odyssey의 고정-library planner–actor–critic baseline을 재현한다. 이후 능동 skill 생성·수정은 E4의 `voyager-lifelong`/`odyssey-full` 보존 트랙에서 복원하고, MineSkynet core는 M2 이후의 multi-agent 트랙으로 분기한다. E4는 M2 연결 시험의 선행조건이 아니다. MineSkynet에서는 planner와 reflector를 cloud-tier control plane으로 분리하고 edge에는 read-only Actor Runtime을 남긴다.
 
 ### Cloud-tier의 물리 배치
 
@@ -384,6 +405,7 @@ Odyssey의 Mineflayer `/step`은 전달된 JavaScript를 `eval()`로 실행하�
 - Minecraft RCON은 3090 localhost에만 두고 tailnet에도 공개하지 않는다.
 - local model endpoint는 각 worker의 localhost에 유지한다.
 - `/step`에는 장기적으로 인증, allowlist와 schema validation을 추가하고 arbitrary code 대신 등록된 skill ID 호출을 우선한다.
+- Full profile의 생성 코드는 일반 worker `/step`에 바로 전달하지 않는다. network를 차단한 disposable sandbox/quarantine에서 시간·자원·API allowlist를 제한해 검증하고, 승인된 version만 read-only registry로 배포한다.
 
 ```text
 Coordinator → Worker control API 3001~3003 : allow
@@ -412,12 +434,13 @@ Tailscale 통신 비용은 orchestration overhead에 포함한다.
 1. 세 장비의 MagicDNS machine name을 고정한다.
 2. 3090에서 Minecraft Fabric server를 실행한다.
 3. 1050 Ti와 Raspberry Pi에서 `mineskynet-3090:25565` 연결을 검증한다.
-4. 3090에서 원본 Odyssey 단일 bot의 end-to-end task를 먼저 성공시킨다.
-5. Raspberry Pi와 1050 Ti에 rule-based Mineflayer bot을 순서대로 추가한다.
-6. agent별 control port와 registry를 구성한다.
-7. coordinator CLI와 통합 control plane API를 연결한다.
-8. Tailscale Grants/ACL과 host firewall로 통신 범위를 제한한다.
-9. 마지막으로 장비별 local LLM을 연결한다.
+4. 3090에서 E0 raw 나무·작업대와 E1 stub controller를 먼저 성공시킨다.
+5. E2 fixed-candidate actor와 E3 공개 Odyssey baseline을 순서대로 검증한다.
+6. Raspberry Pi와 1050 Ti에 rule-based Mineflayer bot을 순서대로 추가한다.
+7. agent별 control port와 read-only registry를 구성한다.
+8. coordinator CLI와 통합 control plane API를 연결한다.
+9. Tailscale Grants/ACL과 host firewall로 통신 범위를 제한한다.
+10. 마지막으로 장비별 local LLM을 연결한다. E4 dynamic skill lab은 core network 경로와 분리한다.
 
 ### Local LLM 학습·배포 전략
 
@@ -500,13 +523,15 @@ Gemma 3 1B가 담당하지 않는 기능은 다음과 같다.
 - JavaScript 실행 오류를 바탕으로 한 코드 수정
 - 복잡한 전투 장비 계획과 장기 spatial reasoning
 
-이 기능은 cloud-tier control plane 또는 RTX 3090의 강한 actor에 배정한다.
+이 기능은 core 실험에서 cloud-tier control plane 또는 RTX 3090의 강한 actor에 배정한다. 그중 curriculum, JavaScript 생성·repair와 skill 축적은 E0~E3에서 제거하는 것이 아니라 E4 `voyager-lifelong`/`odyssey-full` profile로 연기한다.
 
 #### Odyssey·Voyager task에 대한 적합성 판단
 
 [Voyager](https://arxiv.org/abs/2305.16291)는 GPT-4를 이용해 curriculum, JavaScript 생성, 오류 기반 code repair, self-verification과 skill 축적을 수행한다. Gemma 3 1B는 이 전체 흐름을 재현하기 어렵다.
 
 반면 [Odyssey](https://www.ijcai.org/proceedings/2025/0022.pdf)의 actor는 subgoal과 의미적으로 가까운 top-5 skill을 검색한 뒤 하나를 선택하며, compositional skill 내부가 prerequisite를 재귀적으로 해결한다. 이 구조는 local LLM 문제를 자유 코드 생성이 아니라 제한된 classification/ranking 문제로 축소하므로 본 프로젝트에 더 적합하다.
+
+따라서 `odyssey-legacy`는 고정 40+183 library의 논문 재현용 baseline으로 유지하고, Voyager의 능동적 skill 생명주기는 `voyager-lifelong`으로 별도 재현한다. `odyssey-full`은 두 기능군을 결합한 확장 실험이며 공개 Odyssey 결과와 동일한 것으로 주장하지 않는다. Full profile의 code/description 생성에는 강한 model endpoint가 필요하지만 특정 provider SDK는 adapter로 교체할 수 있다.
 
 Odyssey의 dynamic-immediate planning 결과를 8개 task, 각 5회 기준으로 합산하면 GPT-4o는 36/40, MineMA-70B는 31/40, MineMA-8B는 22/40, Qwen2-7B는 11/40, Baichuan2-7B는 5/40을 성공했다. 이는 7B~8B 모델도 dynamic planning까지 맡으면 불안정하다는 근거다. 본 프로젝트는 이 고수준 planning을 cloud로 이동시키고 local model의 출력 공간을 줄여야 한다.
 
@@ -632,7 +657,25 @@ Odyssey Planner + Villager Decomposer
 + Villager Agent Controller         → Global Orchestrator
 Odyssey Reflector + Villager retry  → Evaluator & Replanner
 Odyssey observation + Villager state→ Shared State Service
+Voyager curriculum + code repair
++ verification + skill commit        → Full Skill Lab (`voyager-lifelong`/`odyssey-full` only)
 ```
+
+Full Skill Lab의 lifecycle은 다음과 같이 고정한다.
+
+```text
+task proposal
+  → retrieve existing skills
+  → generate candidate code
+  → sandbox execution
+  → deterministic validation + self-verification
+  → failure: bounded repair or quarantine
+  → success: versioned code/description/provenance commit
+  → embedding index update
+  → held-out task retrieval and reuse
+```
+
+Chroma·LangChain·Sentence Transformer·`javascript`·Babel·model provider adapter는 이 lifecycle의 서로 다른 구간을 지원한다. E0~E3에서 설치하지 않는다는 이유만으로 repository에서 삭제하지 않으며, Full profile에서는 정적 retrieval뿐 아니라 add/delete/persist, parsing, rollback과 재색인까지 contract test한다.
 
 따라서 전체 시스템의 이름과 실험 대상은 MineSkynet이다. VillagerAgent는 가장 가까운 orchestration baseline이며 전체를 감싸는 필수 runtime 이름이 아니다.
 
@@ -719,10 +762,11 @@ agent-task별 성공률, 평균 시간, API 호출, local inference latency, ene
 - internal Mixture-of-Experts 수정
 - local LLM의 full fine-tuning 및 대규모 학습
 - learned online scheduler 또는 reinforcement learning
+- `mineskynet-core` 실행 중 edge actor가 임의로 수행하는 online JavaScript skill 생성·수정·전역 배포
 - privacy-aware routing과 완전 offline operation
 - 대규모 agent 사회 또는 역할의 자율적 진화
 
-이 항목을 초기부터 넣으면 multi-agent 연결, local model, scheduling, memory, visual control의 효과를 분리할 수 없고 학부 연구 범위를 초과한다.
+이 항목을 초기부터 넣으면 multi-agent 연결, local model, scheduling, memory, visual control의 효과를 분리할 수 없고 학부 연구 범위를 초과한다. 다만 능동 skill 학습 자체를 선행연구 재현 범위에서 삭제하지는 않는다. E4의 격리된 `voyager-lifelong`/`odyssey-full` baseline으로 보존하고 core scheduler 실험과 분리한다.
 
 ## 8. 후속 확장 가능성
 
@@ -751,16 +795,16 @@ agent-task별 성공률, 평균 시간, API 호출, local inference latency, ene
 
 ## 10. 바로 다음 할 일
 
-1. RTX 3090에서 MineMA-8B-v3를 연결해 원본 Odyssey actor의 나무 채굴 end-to-end baseline을 완료한다.
-2. Odyssey Actor의 입력·출력·skill retrieval·executor 경계를 공통 `EdgeActor` interface로 추출한다.
-3. `Global Orchestrator`, `Shared State Service`, `Evaluator & Replanner`의 최소 API와 event schema를 정의한다.
-4. 공통 `AgentState`, `TaskState`, `CapabilityState`, `EvaluationEvent` schema를 구현한다.
-5. 동일 server에 Mineflayer bot 세 개를 띄우고 actor별 독립 control API를 연결한다.
-6. local LLM을 붙이기 전에 rule-based skill로 item handoff와 병렬 task를 검증한다.
-7. Gemma 3 1B IT의 zero-shot actor-only skill-selection baseline을 측정한다.
-8. 공식 Minecraft QA/MCQ와 실행 로그 기반 structured skill-selection 데이터를 검토한다.
-9. 필요성이 확인되면 RTX 3090에서 BF16 LoRA 후 Q8/Q5/Q4 배포본을 만든다.
-10. node별 모델 결과와 atomic task 수행 결과를 결합해 capability calibration을 진행한다.
+1. E0의 bot finite position과 raw 나무·작업대 각 10/10은 통과했다. 새 server 첫 hard reset의 respawn timeout과 failure-path bridge crash를 고치고 실행별 raw evidence 저장을 자동화한다.
+2. E1에서 `Odyssey()` eager initialization을 우회한 stub controller·strict registry·state verifier를 검증한다.
+3. E2에서 파인튜닝하지 않은 실제 actor를 fixed-candidate 계약에 연결한다.
+4. E3에서 고정 40+183 skill, Sentence Transformer top-5 retrieval, planner–actor–critic과 MineMA를 포함한 `odyssey-legacy`를 재현한다.
+5. E3 이후 보존 트랙에서는 `voyager-lifelong`의 curriculum·code repair·self-verification·dynamic commit을 재현한 뒤 `odyssey-full` 확장을 검증한다.
+6. 이와 분기 가능한 core 트랙에서는 Odyssey Actor의 입력·출력·skill retrieval·executor 경계를 공통 `EdgeActor` interface로 추출한다.
+7. `Global Orchestrator`, `Shared State Service`, `Evaluator & Replanner`의 최소 API와 event schema를 정의한다.
+8. 동일 server에 Mineflayer bot 세 개를 띄우고 actor별 독립 control API와 read-only registry를 연결한다.
+9. local LLM 전에 rule-based skill로 item handoff와 병렬 task를 검증하고, 이후 zero-shot actor-only baseline을 측정한다.
+10. 필요성이 확인된 뒤에만 structured skill-selection 데이터, LoRA와 양자화 실험을 재개한다.
 
 ## 세션 인계용 주의사항
 
@@ -768,10 +812,11 @@ agent-task별 성공률, 평균 시간, API 호출, local inference latency, ene
 - 현재 주제는 LHF 개선 연구가 아니다.
 - 세 edge node는 하나의 bot 연산을 나누는 compute worker가 아니다.
 - 세 edge node는 각각 공유 Minecraft 세계에 존재하는 독립 bot agent 하나를 담당한다.
-- M0에서는 원본 Odyssey 전체를 3090에서 재현하지만 최종 edge node에는 Odyssey Actor Runtime만 배치한다.
+- 현재 최우선순위는 E0 실행 계층이며, E0~E2를 통과한 뒤 E3에서 공개 Odyssey를 재현한다. 최종 edge node에는 read-only Odyssey Actor Runtime만 배치한다.
+- Voyager의 능동 skill 학습은 삭제하지 않고 E4 `voyager-lifelong`에서 재현한다. `odyssey-full`은 공개 Odyssey와 구분되는 확장 profile이다.
 - Odyssey와 VillagerAgent의 중복 기능은 `Global Orchestrator`, `Shared State Service`, `Evaluator & Replanner`로 통합한다.
 - VillagerAgent는 전체 시스템 wrapper가 아니라 가장 가까운 orchestration baseline이다.
 - cloud-tier control plane은 저수준 행동 controller가 아니며 초기에는 RTX 3090에 on-premise cloud proxy로 배치한다.
 - Gemma 3 1B는 RTX 3090에서 BF16 LoRA로 학습하고, edge 배포 단계에서만 사후 양자화한다.
 - Minecraft QA 데이터만으로는 skill selector가 완성되지 않으므로 별도의 structured skill-selection 데이터가 필요하다.
-- 현재 최우선 목표는 MineMA 기반 원본 Odyssey end-to-end baseline을 완료한 뒤 actor interface를 분리하는 것이다.
+- 현재 최우선 목표는 E0 raw executor를 반복 검증한 뒤 E1 stub controller로 이동하는 것이다.

@@ -36,6 +36,19 @@ def post_json(url: str, payload: dict, timeout: int) -> dict:
         return json.load(response)
 
 
+def get_json(url: str, timeout: int) -> dict:
+    with request.urlopen(url, timeout=timeout) as response:
+        return json.load(response)
+
+
+def event_values(observation: list, event_name: str) -> list:
+    return [
+        event.get(event_name, event) if isinstance(event, dict) else event
+        for event_type, event in observation
+        if event_type == event_name
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bridge", default="http://127.0.0.1:3000")
@@ -55,6 +68,7 @@ def main() -> int:
     }
 
     try:
+        before_health = get_json(f"{args.bridge.rstrip('/')}/health", 5)
         observation = post_json(
             f"{args.bridge.rstrip('/')}/step", payload, args.timeout
         )
@@ -75,15 +89,37 @@ def main() -> int:
         print("FAIL: the bridge returned no final observe event")
         return 1
 
-    inventory = observe_events[-1].get("inventory", {})
+    before_inventory = before_health.get("bot", {}).get("inventory", {})
+    after_inventory = observe_events[-1].get("inventory", {})
+    before_logs = sum(
+        count
+        for name, count in before_inventory.items()
+        if name.endswith("_log")
+    )
+    after_logs = sum(
+        count
+        for name, count in after_inventory.items()
+        if name.endswith("_log")
+    )
+    delta = after_logs - before_logs
     logs = {
         name: count
-        for name, count in inventory.items()
+        for name, count in after_inventory.items()
         if name.endswith("_log") and count > 0
     }
-    print(json.dumps({"logs": logs, "inventory": inventory}, indent=2))
-    if not logs:
-        print("FAIL: no wood log was collected")
+    result = {
+        "before_inventory": before_inventory,
+        "after_inventory": after_inventory,
+        "log_delta": delta,
+        "logs": logs,
+        "onChat": event_values(observation, "onChat"),
+        "onError": event_values(observation, "onError"),
+        "onSave": event_values(observation, "onSave"),
+        "final_status": observe_events[-1].get("status", {}),
+    }
+    print(json.dumps(result, indent=2))
+    if delta < 1:
+        print("FAIL: wood log inventory did not increase")
         return 1
 
     print("PASS: mineWoodLog collected at least one wood log")

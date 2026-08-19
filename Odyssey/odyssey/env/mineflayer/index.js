@@ -1,7 +1,7 @@
 const fs = require("fs");
 const express = require("express");
-const bodyParser = require("body-parser");
 const mineflayer = require("mineflayer");
+const bridgePackage = require("./package.json");
 
 const skills = require("./lib/skillLoader");
 const { initCounter, getNextTime } = require("./lib/utils");
@@ -13,17 +13,18 @@ const Status = require("./lib/observation/status");
 const Inventory = require("./lib/observation/inventory");
 const OnSave = require("./lib/observation/onSave");
 const Chests = require("./lib/observation/chests");
-const { plugin: tool } = require("mineflayer-tool");
-
-let bot = null;
+let activeBot = null;
+let pendingStartResponse = null;
+const bridgeStartedAt = Date.now();
 
 const app = express();
 
-app.use(bodyParser.json({ limit: "50mb" }));
-app.use(bodyParser.urlencoded({ limit: "50mb", extended: false }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: false }));
 
 const STARTUP_CHUNK_TIMEOUT_MS = 10000;
 const STARTUP_PHYSICS_PROBE_MS = 500;
+const DEFAULT_MINECRAFT_VERSION = process.env.MC_VERSION || "1.19.4";
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,6 +61,69 @@ function formatVector(vector) {
     if (!vector) return "(missing)";
     return `(${vector.x}, ${vector.y}, ${vector.z})`;
 }
+
+function dependencyVersion(name) {
+    try {
+        return require(`${name}/package.json`).version;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function inventorySnapshot(bot = activeBot) {
+    if (!bot?.inventory) return {};
+    return bot.inventory.items().reduce((inventory, item) => {
+        inventory[item.name] = (inventory[item.name] || 0) + item.count;
+        return inventory;
+    }, {});
+}
+
+function bridgeVersionSnapshot() {
+    return {
+        bridge: bridgePackage.version,
+        node: process.version,
+        mineflayer: dependencyVersion("mineflayer"),
+        minecraft_data: dependencyVersion("minecraft-data"),
+        pathfinder: dependencyVersion("mineflayer-pathfinder"),
+        tool: dependencyVersion("mineflayer-tool"),
+        collectblock: require("./mineflayer-collectblock/package.json").version,
+        target_minecraft: DEFAULT_MINECRAFT_VERSION,
+    };
+}
+
+function botSnapshot() {
+    const bot = activeBot;
+    const position = bot?.entity?.position;
+    return {
+        connected: Boolean(bot?.entity && bot?._client?.state === "play"),
+        username: bot?.username || null,
+        minecraft_version: bot?.version || null,
+        position: position
+            ? { x: position.x, y: position.y, z: position.z }
+            : null,
+        position_finite: position ? isFiniteVector(position) : null,
+        inventory: inventorySnapshot(),
+    };
+}
+
+app.get("/health", (_req, res) => {
+    const currentBot = botSnapshot();
+    res.json({
+        status:
+            currentBot.position_finite === false ? "degraded" : "ok",
+        service: bridgePackage.name,
+        uptime_ms: Date.now() - bridgeStartedAt,
+        versions: bridgeVersionSnapshot(),
+        bot: currentBot,
+    });
+});
+
+app.get("/version", (_req, res) => {
+    res.json({
+        service: bridgePackage.name,
+        versions: bridgeVersionSnapshot(),
+    });
+});
 
 function localCollisionBlocksLoaded(bot) {
     if (!bot.entity || !isFiniteVector(bot.entity.position)) return false;
@@ -175,19 +239,33 @@ function installFiniteMotionGuard(bot) {
 }
 
 app.post("/start", (req, res) => {
-    if (bot) onDisconnect("Restarting bot");
-    bot = null;
+    if (pendingStartResponse && !pendingStartResponse.headersSent) {
+        pendingStartResponse.status(409).json({
+            error: "Start request superseded by a newer request",
+        });
+    }
+    pendingStartResponse = res;
+
+    const previousBot = activeBot;
+    if (previousBot) {
+        activeBot = null;
+        closeBot(previousBot, "Restarting bot");
+    }
     console.log(req.body);
-    bot = mineflayer.createBot({
+    const bot = mineflayer.createBot({
         host: req.body.host, // minecraft server ip
         port: req.body.port, // minecraft server port
         username: req.body.username,
+        // E0 uses a pinned server protocol. Mineflayer auto-detection can
+        // misidentify the 1.19.4 status response with this dependency set.
+        version: req.body.version || DEFAULT_MINECRAFT_VERSION,
         disableChatSigning: true,
         checkTimeoutInterval: 60 * 60 * 1000,
         // A restored player can arrive before its surrounding chunks. Starting
         // old prismarine-physics at that point can turn x/z into NaN.
         physicsEnabled: false,
     });
+    activeBot = bot;
     const motionGuard = installFiniteMotionGuard(bot);
     bot.once("error", onConnectionFailed);
 
@@ -216,7 +294,15 @@ app.post("/start", (req, res) => {
                     STARTUP_CHUNK_TIMEOUT_MS
                 );
                 bot.chat("/kill @s");
-                await respawned;
+                try {
+                    await respawned;
+                } catch (error) {
+                    throw new Error(
+                        "[startup-guard] Hard reset did not respawn the bot; " +
+                            "verify that the offline-mode bot UUID is an operator",
+                        { cause: error }
+                    );
+                }
                 const inventory = req.body.inventory ? req.body.inventory : {};
                 const equipment = req.body.equipment
                     ? req.body.equipment
@@ -267,14 +353,10 @@ app.post("/start", (req, res) => {
 
             const { pathfinder } = require("mineflayer-pathfinder");
             const tool = require("mineflayer-tool").plugin;
-            const collectBlock = require("mineflayer-collectblock").plugin;
-            const pvp = require("mineflayer-pvp").plugin;
-            const minecraftHawkEye = require("minecrafthawkeye");
+            const collectBlock = require("./mineflayer-collectblock").plugin;
             bot.loadPlugin(pathfinder);
             bot.loadPlugin(tool);
             bot.loadPlugin(collectBlock);
-            bot.loadPlugin(pvp);
-            bot.loadPlugin(minecraftHawkEye);
 
             // bot.collectBlock.movements.digCost = 0;
             // bot.collectBlock.movements.placeCost = 0;
@@ -317,6 +399,7 @@ app.post("/start", (req, res) => {
 
             await bot.waitForTicks(bot.waitTicks * itemTicks);
             res.json(bot.observe());
+            if (pendingStartResponse === res) pendingStartResponse = null;
 
             initCounter(bot);
             bot.chat("/gamerule keepInventory true");
@@ -328,40 +411,67 @@ app.post("/start", (req, res) => {
 
     function onConnectionFailed(e) {
         console.error(e);
-        const failedBot = bot;
-        bot = null;
-        if (failedBot) failedBot.end();
+        if (activeBot === bot) activeBot = null;
+        closeBot(bot, "Bot startup failed");
         if (!res.headersSent) {
             res.status(400).json({ error: e.message || String(e) });
         }
+        if (pendingStartResponse === res) pendingStartResponse = null;
     }
     function onDisconnect(message) {
-        const disconnectedBot = bot;
-        bot = null;
-        if (!disconnectedBot) return;
-        if (disconnectedBot.viewer) {
-            disconnectedBot.viewer.close();
+        if (activeBot === bot) activeBot = null;
+        closeBot(bot, message);
+        if (!res.headersSent) {
+            res.status(400).json({
+                error: `Bot disconnected during startup: ${String(message)}`,
+            });
         }
-        disconnectedBot.end();
-        console.log(message);
+        if (pendingStartResponse === res) pendingStartResponse = null;
     }
 });
 
 app.post("/step", async (req, res) => {
-    // import useful package
-    let response_sent = false;
-    function otherError(err) {
-        console.log("Uncaught Error");
-        bot.emit("error", handleError(err));
-        bot.waitForTicks(bot.waitTicks).then(() => {
-            if (!response_sent) {
-                response_sent = true;
-                res.json(bot.observe());
-            }
-        });
+    const bot = activeBot;
+    if (!bot) {
+        res.status(409).json({ error: "Bot not spawned" });
+        return;
     }
 
+    // import useful package
+    let response_sent = false;
+    let stepListenerAttached = false;
+    function cleanupStepListeners() {
+        if (stepListenerAttached) {
+            process.off("uncaughtException", otherError);
+            stepListenerAttached = false;
+        }
+        bot.removeListener("physicsTick", onTick);
+    }
+    function otherError(err) {
+        if (response_sent) return;
+        console.log("Uncaught Error");
+        const formattedError = handleError(err);
+        bot.emit("error", formattedError);
+        Promise.race([bot.waitForTicks(bot.waitTicks), delay(1000)])
+            .then(() => {
+                if (!response_sent && !res.headersSent) {
+                    response_sent = true;
+                    res.json(bot.observe());
+                }
+            })
+            .catch(() => {
+                if (!response_sent && !res.headersSent) {
+                    response_sent = true;
+                    res.status(500).json({ error: formattedError });
+                }
+            });
+    }
+
+    res.once("finish", cleanupStepListeners);
+    res.once("close", cleanupStepListeners);
+
     process.on("uncaughtException", otherError);
+    stepListenerAttached = true;
 
     const mcData = require("minecraft-data")(bot.version);
     mcData.itemsByName["leather_cap"] = mcData.itemsByName["leather_helmet"];
@@ -420,7 +530,7 @@ app.post("/step", async (req, res) => {
         }
     }
 
-    bot.on("physicTick", onTick);
+    bot.on("physicsTick", onTick);
 
     // initialize fail count
     let _craftItemFailCount = 0;
@@ -436,6 +546,7 @@ app.post("/step", async (req, res) => {
     await bot.waitForTicks(bot.waitTicks);
     const r = await evaluateCode(code, programs);
     process.off("uncaughtException", otherError);
+    stepListenerAttached = false;
     if (r !== "success") {
         bot.emit("error", handleError(r));
     }
@@ -446,7 +557,7 @@ app.post("/step", async (req, res) => {
         response_sent = true;
         res.json(bot.observe());
     }
-    bot.removeListener("physicTick", onTick);
+    bot.removeListener("physicsTick", onTick);
 
     async function evaluateCode(code, programs) {
         // Echo the code produced for players to see it. Don't echo when the bot code is already producing dialog or it will double echo
@@ -597,13 +708,20 @@ app.post("/step", async (req, res) => {
 });
 
 app.post("/stop", (req, res) => {
-    bot.end();
+    const bot = activeBot;
+    if (!bot) {
+        res.status(409).json({ error: "Bot not spawned" });
+        return;
+    }
+    activeBot = null;
+    closeBot(bot, "Bot stopped");
     res.json({
         message: "Bot stopped",
     });
 });
 
 app.post("/pause", (req, res) => {
+    const bot = activeBot;
     if (!bot) {
         res.status(400).json({ error: "Bot not spawned" });
         return;
@@ -613,6 +731,13 @@ app.post("/pause", (req, res) => {
         res.json({ message: "Success" });
     });
 });
+
+function closeBot(bot, message) {
+    if (!bot) return;
+    if (bot.viewer) bot.viewer.close();
+    if (bot._client?.state !== "disconnected") bot.end();
+    if (message) console.log(message);
+}
 
 // Server listening to PORT 3000
 
