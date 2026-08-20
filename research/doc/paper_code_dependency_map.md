@@ -54,8 +54,8 @@ goal + constraints + environment observation
 | 논문 기능 | 보존할 contract | 공개 코드 | 주 dependency/model | 현재 판정 |
 |---|---|---|---|---|
 | Minecraft environment와 observation | 실행 전후 inventory, status, voxel, entity, chest, chat와 error를 구조화 event로 반환 | `odyssey/env/bridge.py`, `odyssey/env/mineflayer/index.js`, `lib/observation/*` | Mineflayer, minecraft-data, Express, requests | executor 회귀 완료. Python bridge의 `/pause` 결합은 일반 경로에 남아 있음 |
-| Primitive skill | compositional skill이 호출할 안정된 저수준 동작 제공 | `skill_library/skill/primitive`, `odyssey/control_primitives`, `control_primitives_context/mineflayer.js` | Mineflayer, pathfinder, tool, collectblock | Odyssey 추가 22개는 완전 대응. Voyager 상속 18개는 interface 단위 working map 작성 |
-| Compositional skill | 이름, code, description을 가진 재사용 skill이며 다른 skill을 재귀 호출 가능 | `skill_library/skill/compositional`, `skill/skills.json` | JavaScript executor와 primitive corpus | 183 code와 183 JSON entry 확인 |
+| Primitive skill | compositional skill이 호출할 안정된 저수준 동작 제공 | `skill_library/skill/primitive`, `odyssey/control_primitives`, `control_primitives_context/mineflayer.js` | Mineflayer, pathfinder, tool, collectblock | [40개 working manifest](../manifest/odyssey_primitive_40.json) 작성. runtime fixture와 contract 위험 수정은 남음 |
+| Compositional skill | 이름, code, description을 가진 재사용 skill이며 다른 skill을 재귀 호출 가능 | `skill_library/skill/compositional`, `skill/skills.json` | JavaScript executor와 primitive corpus | 183 code·description·JSON entry 동기화와 파일별 checksum 완료 |
 | Skill description | 전체 program code에서 자연어 설명을 얻고 retrieval corpus로 사용 | `skill_library/skill/description`, `SkillManager.generate_skill_description` | 논문상 LLM; 현재 저장 corpus | 고정 corpus는 존재. 생성 경로는 비활성·불완전 |
 | Semantic skill retrieval | 자연어 context와 descriptions를 같은 encoder로 embedding하고 유사도 순으로 candidate 반환 | `agents/skill.py: SkillManager.retrieve_skills` | Sentence Transformers → LangChain embedding adapter → Chroma | 공개 코드 encoder, top-5 기본·top-10 별도 정책 선정. revision, metric과 persist/reload 회귀는 미고정 |
 | Planner QA retrieval | subgoal context를 만들기 위한 별도 QA cache 검색 | `agents/planner.py: PlannerAgent`, `curriculum/vectordb` | Sentence Transformers, Chroma, planner/MineMA endpoint | skill retrieval과 다른 DB임. eager initialization과 분리 필요 |
@@ -76,18 +76,22 @@ goal + constraints + environment observation
 |---|---:|---|
 | `skill/primitive/*.js` | 22 | 논문에서 Odyssey가 추가했다고 명시한 14 operational + 8 spatial과 이름까지 일치 |
 | `odyssey/control_primitives/*.js` | 11 | Voyager control과 Odyssey 실행 helper가 섞인 파일 수이며 primitive 수와 일대일 대응하지 않음 |
-| `skill/compositional/*.js` | 183 | `skills.json` key와 전부 일치 |
-| `skill/skills.json` | 183 | 각 entry에 code와 description 저장 |
-| `skill/description/*.txt` | 184 | compositional 183개는 모두 존재하며 `killOnePlayer.txt`가 하나 더 있음 |
+| `skill/compositional/*.js` | 183 | `skills.json` key와 전부 일치하고 file별 SHA-256 기록 |
+| `skill/skills.json` | 183 | E0에서 검증한 `craftCraftingTable.js`와 내장 code 불일치 1건을 동기화한 뒤 code·description 전체 일치 확인 |
+| `skill/description/*.txt` | 184 | compositional 183개와 전부 대응. code가 없는 `killOnePlayer.txt`는 기본 corpus에서 제외 |
 
 현재 고정 가능한 checksum:
 
 ```text
-skill/skills.json                         sha256 3a3b77a94ecaf21f84278312ce3d2065dd4382ae5f4839301baccca822bec165
+skill/skills.json                         sha256 0be22fdc338d4db199c75d60ad6455ec67e9b1240bda56834014d886e0c87802
 conf/config.json                          sha256 504cea1fc2489aff6e38f9c1000aabbc704bfe8c3ed5224778a9e9bf4d7113f5
 requirements.txt                          sha256 4afa65234cd0419f5e2b31b9c8b14c442c69fab535458eacdcf190ef37f2ecca
 mineflayer/package-lock.json              sha256 5555e896e0c5d19c635965bc9338b0cd60a248092bc9c8ff65a6c678943a6b7c
+manifest/odyssey_primitive_40.json         sha256 f151af4cac599391f5d14d584cc7f6a9f751db7cd04d5ea45b0e30ce11db3af8
+manifest/odyssey_skill_corpus.sha256       sha256 31a4c1e3f7672a7a422628ddb9701b485286b25bb3edd67e403aeb9eaab73861
 ```
+
+`odyssey_skill_corpus.sha256`에는 compositional code 183개, 대응 description 183개와 실제 runtime bundle인 `skills.json` 1개가 들어 있다. 저장소 루트에서 `sha256sum --check --quiet research/manifest/odyssey_skill_corpus.sha256`로 367개 항목을 한 번에 확인한다.
 
 ### 4.1 Primitive 40개 working map
 
@@ -105,6 +109,8 @@ Voyager 부록 A.4와 현재 `control_primitives_context`를 함께 보면 상�
 - `Goal*` constructor와 `bot.isABed` 같은 predicate/helper는 위 interface가 사용하는 지원 API로 별도 추적한다.
 
 이 18개 목록은 Odyssey 부록이 상속분을 다시 열거하지 않기 때문에 Voyager 부록과 공개 prompt context를 결합한 working map이다. 따라서 현재 파일 11개를 더해 수를 맞추지 않고, 각 interface가 modernized Mineflayer에서 호출 가능한지를 회귀 fixture로 확인해야 최종 고정된다.
+
+전체 40개 항목의 논문 contract, source path, 주 호출 API와 정적 판정은 [`odyssey_primitive_40.json`](../manifest/odyssey_primitive_40.json)에 고정했다. 실제 함수 파일은 syntax 검사를 통과했다. `control_primitives_context/mineflayer.js`는 top-level `await` 예시를 포함한 prompt fragment이므로 실행 파일이 아니라 외부 API 선언 근거로만 취급한다. 정적 감사에서 `goto`의 `bot.entity.positon` 오타, `getAnimal`의 대입 조건·오타와 유인 동작 불일치 등은 runtime 합격을 막는 contract 위험으로 분리했다.
 
 ## 5. 재현 contract 초안
 
@@ -203,7 +209,7 @@ HTTP timeout, non-2xx, disconnected bot, JavaScript evaluation error와 critic v
 
 ### 남은 구현·검증 항목
 
-1. **Primitive 40개 provenance:** Odyssey 추가 22개는 source와 완전히 대응한다. Voyager 상속 18개는 Voyager 부록과 prompt context로 working map을 작성했으나, interface별 실행 fixture를 통과한 뒤 최종 manifest로 고정해야 한다.
+1. **Primitive 40개 runtime 검증:** 40개 working manifest는 작성했다. Odyssey 추가 22개의 source상 contract 위험을 먼저 수정하고, Voyager 상속 18개를 포함한 interface별 실행 fixture를 통과해야 runtime manifest로 승격할 수 있다.
 2. **Encoder 고정:** 선택한 공개 코드 encoder의 정확한 revision·checksum과 전처리·normalization을 manifest에 고정해야 한다.
 3. **Retrieval profile 회귀:** 기본 top-5와 별도 top-10이 같은 corpus·metric에서 재현되는지 known-query fixture로 확인해야 한다.
 4. **Dynamic skill lifecycle:** `Odyssey.learn`의 `add_new_skill` 호출은 주석 처리돼 있고 `generate_skill_description`은 초기화되지 않은 `self.llm`을 참조한다. 고정-library Odyssey baseline과 Voyager/Full profile을 분리한다.
@@ -223,10 +229,10 @@ README의 Mineflayer 버전과 mod bundle 설명은 이번 감사에서 현재 l
 - dependency 직접 사용, optional·누락·미사용 후보 분류
 - contract 초안과 논문–코드 불일치 기록
 
-### Offline 검증 — 다음 단계
+### Offline 검증 — 진행 중
 
-1. **Primitive 기능 고정:** 논문의 primitive 40개가 현재 어느 함수·Mineflayer API에 대응하는지 manifest로 기록하고, 현재 환경에서도 같은 역할을 수행하는지 별도 fixture로 확인한다.
-2. **Skill library 동일성 보장:** 모든 실험이 같은 183개 compositional skill과 자연어 description을 사용했는지 확인할 수 있도록 파일별 checksum을 기록한다.
+1. **Primitive 기능 고정 `[~]`:** 논문의 primitive 40개가 어느 함수·Mineflayer API에 대응하는지 working manifest를 작성했다. source상 contract 위험 수정과 runtime interface fixture는 남았다.
+2. **Skill library 동일성 보장 `[x]`:** 183개 compositional skill과 자연어 description, 동기화된 runtime `skills.json`의 파일별 checksum을 기록하고 검증했다.
 3. **Semantic encoder 고정:** 공개 코드 checkpoint의 정확한 revision·checksum과 전처리를 retrieval manifest에 고정한다.
 4. **후보 검색 재현:** index를 다시 열어도 같은 known query에서 기본 top-5와 별도 top-10 profile 후보가 나오는지 저장한다.
 5. **새 환경 설치 재현:** 기능별 dependency를 분리한 lock으로 빈 환경에서 설치·import·index load가 가능한지 확인한다.

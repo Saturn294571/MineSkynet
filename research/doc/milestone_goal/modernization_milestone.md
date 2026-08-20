@@ -45,13 +45,13 @@ Voyager의 automatic curriculum, code generation/repair, self-verification과 dy
 논문이 설명한 각 기능이 현재 어느 코드와 model에 의해 수행되는지 연결해, dependency를 바꿔도 연구 기능을 잃지 않게 한다.
 
 - [x] 논문의 각 기능을 source file, dependency, model과 input/output에 연결
-- [~] task, prompt, 40+183 skill corpus와 checkpoint 출처·hash 고정
+- [~] task, prompt, primitive 40 manifest, 183 skill corpus와 checkpoint 출처·hash 고정
 - [x] dependency를 core, executor, retrieval, model, combat, training으로 1차 분류
 - [ ] 각 profile의 지원 버전, lockfile과 clean-install 절차 작성
 - [~] license, 보안 경고, deprecated API와 유지보수 상태 기록
 - [x] branch 역할과 범위 기반 tag 정책 확정
 
-세부 근거와 미해결 조건은 [`paper_code_dependency_map.md`](../paper_code_dependency_map.md)에 기록했다. 정적 감사에서는 Odyssey 추가 primitive 22개와 compositional corpus 183개 대응, dependency 역할과 contract를 확인했다. Voyager 상속 primitive 18개의 working map, 공개 코드 encoder와 retrieval k 정책은 정했으며 interface fixture, encoder revision·전처리, retrieval 결과와 clean-install lock 고정은 후속 검증으로 남았다.
+세부 근거와 미해결 조건은 [`paper_code_dependency_map.md`](../paper_code_dependency_map.md)에 기록했다. primitive 40개의 논문–source working manifest와 compositional code·description 183쌍의 checksum을 고정했다. Voyager 상속 primitive 18개의 runtime interface fixture, source상 contract 위험의 수정·검증, encoder revision·전처리, retrieval 결과와 clean-install lock은 후속 검증으로 남았다.
 
 ### Minecraft 실행 계층 `[x]`
 
@@ -70,7 +70,10 @@ actor가 선택한 JavaScript skill이 실제 Minecraft 상태를 바꾸고, 오
 
 자연어 subgoal과 의미가 가까운 기존 skill을 논문 조건에 따라 반복해서 후보로 제공할 수 있는지 확인한다.
 
-- [ ] 40+183 corpus, description, 중복·누락 감사와 hash 기록
+- [~] primitive 40개의 provenance·API working manifest 작성과 실제 함수 syntax 확인; runtime interface fixture는 미완료
+- [x] compositional code 183개와 대응 description 183개의 파일별 SHA-256 기록
+- [x] `skills.json` 183 key를 code·description 원본과 동기화하고 runtime bundle checksum 기록
+- [x] code가 없는 `killOnePlayer.txt`를 기본 corpus에서 제외하고 orphan으로 기록
 - [x] 공개 코드 설정의 encoder를 modernized 재현 기준으로 선정하고 논문 명시 checkpoint가 아님을 기록
 - [ ] encoder revision·checksum, max length, pooling·normalization과 전처리 고정
 - [ ] 자연어 subgoal → 기본 top-5 candidate 흐름 재현
@@ -154,8 +157,8 @@ dependency 또는 구현 고리를 변경할 때 다음만 확인한다.
 
 ## 당장 수행할 순서
 
-1. **Primitive 의미 고정:** 논문의 primitive 40개가 현재 어느 함수·Mineflayer API에 해당하는지 manifest로 기록한다.
-2. **Skill library 동일성 보장:** 183개 compositional skill 코드와 자연어 description이 나중에 바뀌었는지 확인할 수 있도록 file checksum을 만든다.
+1. **Primitive 의미 고정 `[~]`:** [40개 working manifest](../../manifest/odyssey_primitive_40.json)는 작성했다. `goto`, `getAnimal`과 기타 contract 위험을 수정한 뒤 Voyager 상속 interface까지 runtime fixture로 확인한다.
+2. **Skill library 동일성 보장 `[x]`:** [checksum manifest](../../manifest/odyssey_skill_corpus.sha256)에 183개 compositional code와 자연어 description, runtime `skills.json`을 고정했다.
 3. **Semantic retrieval 재현:** 공개 코드 encoder의 정확한 revision과 전처리를 고정하고, 같은 query의 기본 top-5와 별도 top-10 profile 후보 결과를 회귀로 남긴다.
 4. **Dependency 설치 재현:** Python/Node package를 역할별로 나누고 지원 version·lockfile·clean-install 절차를 고정한다.
 5. **Actor 실행 연결:** MineMA가 검색된 후보에서 정확한 skill을 선택하고 recursive prerequisite까지 실행하게 한다.

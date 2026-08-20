@@ -4,13 +4,25 @@
 
 ## 문서 읽는 순서
 
-1. [PROMPT.md](PROMPT.md): 프로젝트 전체의 다섯 가지 판단 원칙
+1. [PROMPT.md](PROMPT.md): 프로젝트 전체의 판단 원칙
 2. [MineSkynet_blueprint.md](doc/MineSkynet_blueprint.md): 연구 질문, 제안 구조와 평가 방법
 3. [milestone_index.md](doc/milestone_goal/milestone_index.md): 현재 상태와 바로 다음 단계
 4. [modernization_milestone.md](doc/milestone_goal/modernization_milestone.md): Odyssey 재현·현대화 완료 조건
 5. [research_milestone.md](doc/milestone_goal/research_milestone.md): modernized 기반의 MineSkynet 연구 단계
 
 구현을 확인할 때만 [paper_code_dependency_map.md](doc/paper_code_dependency_map.md)를 보고, 실행 근거가 필요할 때는 [E0 증거](doc/E0_test_evidence_2026-08-20.md)로 내려간다.
+
+재현 자산은 다음 두 manifest에서 확인한다.
+
+- [primitive 40 mapping](manifest/odyssey_primitive_40.json): 논문의 primitive가 현재 어느 함수·Mineflayer API contract에 대응하는지 기록
+- [skill corpus checksum](manifest/odyssey_skill_corpus.sha256): compositional code 183개, description 183개와 runtime `skills.json`의 SHA-256 기록
+
+저장소 루트에서 다음 명령으로 형식과 파일 동일성을 확인할 수 있다.
+
+```bash
+jq '.counts, (.primitives | length)' research/manifest/odyssey_primitive_40.json
+sha256sum --check --quiet research/manifest/odyssey_skill_corpus.sha256
+```
 
 아래 명령은 각 터미널에서 먼저 저장소 루트로 이동한 뒤 실행한다. 최초 진입 경로를 제외한 저장소 내부 경로는 상대경로로 표기한다.
 
@@ -50,6 +62,7 @@ MineSkynet은 서로 다른 연산 능력을 가진 물리 edge 장치들이 하
 - 나무 블록 파괴 후 `oak_log` 인벤토리 증가 확인
 - MineMA-8B-v3 체크포인트 로드와 `llama3_8b_v3` endpoint 단일 추론
 - 로컬 sentence-transformer 로드와 Odyssey skill top-k 검색
+- primitive 40개의 논문–source working manifest와 compositional skill corpus 183개의 파일별 checksum
 
 MineMA actor를 포함한 전체 Odyssey end-to-end 실행은 아직 진행 중이다.
 

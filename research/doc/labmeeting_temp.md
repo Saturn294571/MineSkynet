@@ -106,8 +106,38 @@
 
 # 8.20 랩미팅
 1) 환경 재현 관련 이슈들
-    - 추가적인 실험이나 구현 전에 일단 환경 세팅부터 최우선적으로 하는 방식을 선택. 좀 게으른 방식이긴 하지만 추론수준을 최고로 당기고 프로젝트를 탐색시킨 다음 보고서를 작성 -> 작성된 보고서에서 의존성들을 세가지 클래스로 나눔. 나누는 기준은 오딧세이 실험 재현에 필요한 최소기능인가? (실험 재현을 위한 MVP에 포함되는가?)
-        1) 필수기능
-        2) 오딧세이 실험 완전 재현을 위해 필요한 부가기능
-        3) 과감히 없애거나 통합시켜도 될 기능
-    - mineflayer@4.8.1 하나로 고정된 환경이 아님. lockfile이 그 아래 minecraft-protocol@1.66.2, prismarine-item@1.18.0 같은 훨씬 최신 전이 의존성을 허용해 구형 core와 섞고 있고, 로컬 collectblock의 선언과 lockfile도 서로 달라 npm ls가 실패 -> 호환성 묶음을 공식 변경 이력과 로컬 코드 근거로 좁힙
+    - 추가적인 실험이나 구현 전에 일단 환경 세팅부터 최우선적으로 하는 방식을 선택. 좀 게으른 방식이긴 하지만 추론수준을 최고로 당기고 프로젝트를 탐색시킨 다음 보고서를 작성 -> 작성된 보고서에서 의존성들을 세가지 클래스로 나눔. 나누는 기준은 오딧세이 실험 재현에 필요한 최소기능인가? 따라서 브랜치 상으로 다음으로 관리
+        1) odyssey-modernization : 의존성 이슈가 많은 구형 오딧세이에 대해 의존성이 취약한 부분은 대체/삭제/업데이트/보강. 목표는 구형 코드의 기능 재현하면서 의존성 이슈로부터 튼튼하게
+        2) mineskynet-core : 1) 이 완료된 후 이 위에 추가적인 제안을 더 붙일것 (다중에이전트 등)
+        3) odyssey-legacy : 구형 오딧세이. 브랜치상 master에서 관리
+    - 챗봇이 목표를 과도해석하거나 프로젝트 본질에 맞지 않는 경우를 제한하기 위해 일종의 하네스? 구조 도입. 도입 계기는 오딧세이 현대화중, 현대화 작업 자체가 너무 과도하게 분석의 대상이 되고, 세부 목표가 과도하게 세분화되며 늘어지는 경향을 포착. 또한 챗봇과 작성한 문서에 대한 소비자를 다음과 같이 나눴을 때 (1) 1차 연구자 (저, 연구를 수행하는 당사자). (2) 2차 연구자 (교수님/동료 학연생 같이 피드백/코워커) (3) 프로젝트를 모르는 제 3자 로 나눴을 때 (2),(3)은 고사하고 (1)도 챗봇의 분석이나 문서를 따라가지 못한다고 파악. PROMPT.md에 반영
+        - 경험적으로는 해당 하네스 도입 이후 논문-구현 간 일대일 대응이 훨씬 명료하고 챗봇도 실제 구현이나 너무 기술적으로 빠져들지 않고 논문에서의 언어를 사용하여 정보를 받는 입장에서 훨씬 간결하다고 느낌.
+2) 실제 완료 항목
+    ### 논문–코드–dependency 대응 `[~]`
+
+    논문이 설명한 각 기능이 현재 어느 코드와 model에 의해 수행되는지 연결해, dependency를 바꿔도 연구 기능을 잃지 않게 한다.
+
+    - [x] 논문의 각 기능을 source file, dependency, model과 input/output에 연결
+    - [~] task, prompt, primitive 40 manifest, 183 skill corpus와 checkpoint 출처·hash 고정
+    - [x] dependency를 core, executor, retrieval, model, combat, training으로 1차 분류
+    - [ ] 각 profile의 지원 버전, lockfile과 clean-install 절차 작성
+    - [~] license, 보안 경고, deprecated API와 유지보수 상태 기록
+    - [x] branch 역할과 범위 기반 tag 정책 확정
+
+    세부 근거와 미해결 조건은 [`paper_code_dependency_map.md`](../paper_code_dependency_map.md)에 기록했다. primitive 40개의 논문–source working manifest와 compositional code·description 183쌍의 checksum을 고정했다. Voyager 상속 primitive 18개의 runtime interface fixture, source상 contract 위험의 수정·검증, encoder revision·전처리, retrieval 결과와 clean-install lock은 후속 검증으로 남았다.
+
+    ### Minecraft 실행 계층 `[x]`
+
+    actor가 선택한 JavaScript skill이 실제 Minecraft 상태를 바꾸고, 오류가 나도 다음 실행을 계속할 수 있는지 확인한다.
+
+    - [x] Mineflayer bridge health/version과 request-local bot lifecycle
+    - [x] finite position guard와 failure 뒤 bridge 생존
+    - [x] `/pause` 없이 mod-free server에서 나무와 작업대 각각 10/10
+    - [x] inventory delta, latency, dependency와 Minecraft log 자동 저장
+    - [x] bridge·pause bundle·bot lifecycle의 결합 문제와 변경 이유 문서화
+    - [x] `a157205`를 `odyssey-modernized-executor-1.19.4` annotated tag로 로컬·원격에 고정
+
+    원본 bridge의 재실행이나 legacy 대비 latency 표는 요구하지 않는다. 현재 실행 계층이 clean install, 정상 행동과 대표 failure recovery를 반복 통과한 것으로 이 범위를 완료한다.
+3) 다음 목표 (modernization_milestone.md)
+    - 논문–코드–dependency 대응, Skill library와 semantic retrieval 작업 완료
+    - 나머지 취약한/불안정한 과제들을 순차적으로 개선.

@@ -24,7 +24,7 @@
 | `experiment/odyssey-modernized` | `odyssey-modernized` | 논문 기능을 지원 가능한 의존성과 명시적 service/profile 경계에서 안정적으로 실행하는 연구 기반이다. |
 | `mineskynet-core` | MineSkynet 연구 구현 | 검증 완료된 modernized commit을 base로 만든다. 분산 실행과 연구 기여는 여기서 추가한다. |
 
-`experiment/e1-stub`은 modernized에서 분기한 임시 진단 브랜치다. stub controller는 독립 연구 목표가 아니라 service boundary, parser, 오류 분류를 검사할 필요가 있을 때만 사용하는 test harness다.
+`experiment/e1-stub`의 하네스·문서 변경은 `234238d`에서 modernized에 병합됐다. stub controller는 독립 연구 목표가 아니라 service boundary, parser, 오류 분류를 검사할 필요가 있을 때만 사용하는 test harness다.
 
 ## 문서 구성
 
@@ -45,9 +45,11 @@
 - [x] `/pause` 없이 mod-free server에서 정상·failure-path 회귀와 실행 증거 저장을 확인했다.
 - [x] E0 변경은 `a157205` (`E0 finished`)에 커밋됐다.
 - [x] `a157205`를 `odyssey-modernized-executor-1.19.4` annotated tag로 로컬·원격에 고정했다. 이 tag는 실행 계층 baseline이며 Odyssey 전체 재현 완료를 뜻하지 않는다.
+- [x] `234238d`에서 E1 하네스, 문서 재편과 retrieval 정책을 `experiment/odyssey-modernized`에 병합했다.
 - [x] 논문 기능을 공개 코드, model/service와 dependency profile에 1차 대응하고 contract 및 불일치를 문서화했다.
-- [~] Odyssey 추가 primitive 22개와 compositional code·JSON entry·description 183개 대응은 확인했다. Voyager 상속 18개 working map의 interface fixture는 아직 미확정이다.
-- [~] 공개 코드의 Sentence Transformer checkpoint를 modernized 기준으로 선정하고 top-5 기본·top-10 별도 profile 정책을 정했다. corpus·encoder revision·metric과 실제 후보 결과를 고정한 재현 fixture는 아직 없다.
+- [~] primitive 40개의 논문–source working manifest를 작성했다. Odyssey 추가 22개는 source와 대응하지만 Voyager 상속 18개의 runtime fixture와 확인된 contract 위험 수정은 남았다.
+- [x] compositional code·JSON entry·description 183개를 동기화하고 파일별 checksum을 고정했다. code가 없는 `killOnePlayer.txt`는 기본 corpus에서 제외했다.
+- [~] 공개 코드의 Sentence Transformer checkpoint를 modernized 기준으로 선정하고 top-5 기본·top-10 별도 profile 정책을 정했다. encoder revision·metric과 실제 후보 결과를 고정한 retrieval fixture는 아직 없다.
 - [ ] MineMA actor, recursive prerequisite, planner–actor–critic을 포함한 Odyssey end-to-end baseline은 아직 재현되지 않았다.
 - [ ] 논문 핵심 기능 전체를 실행하는 `odyssey-modernized` 완료 commit과 clean-install 회귀는 아직 없다.
 - [ ] `mineskynet-core` 브랜치는 modernized 완료 뒤 생성한다.
