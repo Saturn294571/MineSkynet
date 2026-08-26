@@ -1,18 +1,25 @@
 import os
 
 import odyssey.utils as U
-from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.vectorstores import Chroma
 
 from odyssey.prompts import load_prompt
 from odyssey.control_primitives import load_control_primitives
+from odyssey.retrieval_embedding import (
+    DEFAULT_SKILL_RETRIEVAL_PROFILE,
+    RETRIEVAL_DISTANCE_METRIC,
+    SKILL_RETRIEVAL_PROFILES,
+    build_retrieval_embeddings,
+)
 from odyssey.utils.logger import get_logger
 
 class SkillManager:
     def __init__(
         self,
-        retrieval_top_k=5,
+        retrieval_top_k=SKILL_RETRIEVAL_PROFILES[
+            DEFAULT_SKILL_RETRIEVAL_PROFILE
+        ],
         request_timout=120,
         ckpt_dir="ckpt",
         resume=False,
@@ -39,8 +46,9 @@ class SkillManager:
         self.ckpt_dir = ckpt_dir
         self.vectordb = Chroma(
             collection_name="skill_vectordb",
-            embedding_function=HuggingFaceEmbeddings(model_name=embedding_model),
+            embedding_function=build_retrieval_embeddings(embedding_model),
             persist_directory=f"{ckpt_dir}/skill/vectordb",
+            collection_metadata={"hnsw:space": RETRIEVAL_DISTANCE_METRIC},
         )
         if reload:
             for key, value in self.skills.items():

@@ -1,6 +1,6 @@
 # 7.27 랩미팅
 
-> 이 문서는 날짜별 구두 논의의 원문 기록이며 현재 설계·상태의 기준 문서가 아니다. 현재 판단은 [`PROMPT.md`](../PROMPT.md), [`MineSkynet_blueprint.md`](./MineSkynet_blueprint.md)와 [`milestone_index.md`](./milestone_goal/milestone_index.md)를 따른다. 아래 과거 표현은 당시 맥락 보존을 위해 수정하지 않는다.
+> 문서 역할: [`report_log.md`](./report_log.md)에 누적된 작업 보고와 날짜별 논의를 선별·다듬어 교수님께 보고하기 위한 임시 문서다. 현재 목표와 완료 조건은 [`milestone_index.md`](./milestone_goal/milestone_index.md), 연구 원칙은 [`AGENTS.md`](../AGENTS.md)를 따르며, 아래 과거 표현은 당시 맥락 보존을 위해 임의로 고치지 않는다.
 - ODYSSEY: Empowering Minecraft Agents with Open-World Skills
     - 문제 의식 : 많은 마크 에이전트 연구들이 테크트리(다이아 얻기 등)을 따르도록 설계됨. 이는 LLM의 능력을 제한함
     - 핵심 구성요소
@@ -138,6 +138,66 @@
     - [x] `a157205`를 `odyssey-modernized-executor-1.19.4` annotated tag로 로컬·원격에 고정
 
     원본 bridge의 재실행이나 legacy 대비 latency 표는 요구하지 않는다. 현재 실행 계층이 clean install, 정상 행동과 대표 failure recovery를 반복 통과한 것으로 이 범위를 완료한다.
-3) 다음 목표 (modernization_milestone.md)
+3) 다음 목표 (modernization_milestone.md에 세부사항)
     - 논문–코드–dependency 대응, Skill library와 semantic retrieval 작업 완료
     - 나머지 취약한/불안정한 과제들을 순차적으로 개선.
+    - 피드백
+        - 기능 전부 재현 & 현대화는 아닐수도 있다 → 일부 까다로운게 있을 수 잇다.
+            - 스킬은 많음 → 마크에서 캐고 조합; 작동이 되면 다 되지 않나?
+            - 일부가 안될수도 있다.
+            - 너무 다양한 태스크 → 판이 너무 커진다. 적당한 태스크 잡는걸 목표 (예를들어 다이아 얻기 까지)
+            - 목표를 줬을 때 스킬이 다 있고 적절한 스킬을 조합해서 해결할 수 있나? → 난이도가 (농장만들기나 집만들기처럼 적절한 중간목표)
+            - 가벼운 모델은 실패/무거운 모델은 성공할만한
+            - 오뎃세이에서 할만한거 전부 최신화하려면 시간이 걸릴수밖에
+        - 챗봇 : 챗봇이랑 같이 작업할때 챗봇의 방향이 옳은 방향으로 복잡해지는가? 필수적인가? 내가 컨트롤 가능한 수준인가?
+            - 스코프를 적절하게 만들고 계속 쪼지 않는이상 필요이상으로 복잡; 뭘 남기고 뭘 버리는지의 판단도 항상 인간이랑 일치하지 않을수도
+            - 선별/축약/요약/판단의 영역이 더 중요해진다
+        - 연구주제 : 방향이 헷갈리면 상위 주제가 무엇인지 상기해라; (적절하게 더 작은 목표로 작게 쳐 내거나)
+            - 기준 : 남들하던거/권위에 기대긴 함 → 단, 희소하거나 하는게 더 컨트리뷰션 있을수도 (따라하는게 나쁘진 않지만 훌륭한 연구자 → 독창적)
+
+# 8.27 랩미팅
+1) 이번주 목표
+    다음 랩미팅까지의 단기 목표는 “Skill library를 정적으로 정리한 상태에서 실제 재현 가능한 retrieval 입력 계층으로 올리는 것”입니다.
+
+    우선순위는 다음이 적절합니다.
+
+    1. Primitive runtime 결함 정리
+
+    - `goto`, `getAnimal`의 명백한 구현 오류 수정
+    - `feedAnimals`, `cookFood`, `killMonsters`의 contract 위험 확인
+    - primitive를 조회·장착·이동·상호작용 등으로 나눠 대표 fixture 작성
+    - 서버가 필요한 fixture는 실행 명령과 성공 조건을 준비한 뒤 직접 실행
+
+    목표는 40개를 모두 완벽하게 실증하는 것이 아니라, compositional skill이 의존하는 primitive가 조용히 실패하지 않는 상태를 만드는 것입니다.
+
+    2. Semantic encoder 조건 고정
+
+    - 공개 코드의 `paraphrase-multilingual-MiniLM-L12-v2` 정확한 revision/checksum 기록
+    - max length, pooling, normalization 설정 기록
+    - 같은 corpus를 다시 embedding할 수 있는 manifest 작성
+
+    여기까지는 모델 성능 평가가 아니라 “같은 입력을 다시 만들 수 있는가”를 확인하는 작업입니다.
+
+    3. Retrieval fixture 완성
+
+    - top-5를 기본 profile로 구현
+    - top-10을 별도 profile로 분리
+    - 대표 자연어 subgoal 몇 개에 대한 후보와 score 저장
+    - index 재생성·재로드 후 후보 순서가 유지되는지 확인
+
+    랩미팅에서는 retrieval 정확도가 좋다고 주장하기보다 “조건과 결과를 고정해 이후 actor 실험의 입력을 통제했다”고 설명하면 됩니다.
+
+    4. 가능하면 진행할 항목
+
+    - retrieval profile의 dependency version/lock 작성
+    - 빈 환경에서 install → index 생성 → reload → 검색 smoke test
+    - Chroma·LangChain deprecated API 경고 정리
+
+    이번 랩미팅 전에는 MineMA actor, planner–actor–critic end-to-end, 능동 skill 생성, legacy 성능 비교까지 확장하지 않는 편이 좋습니다.
+
+    발표 구조는 다음 네 문장으로 충분합니다.
+
+    - 실행 계층은 이미 반복 회귀를 통과했다.
+    - 지난주에는 primitive 40 mapping과 183개 skill corpus checksum을 고정했다.
+    - 감사 과정에서 primitive contract 결함과 `skills.json` 불일치를 발견했고 runtime corpus는 동기화했다.
+    - 다음 목표는 primitive runtime 안정화와 재현 가능한 top-5 retrieval baseline 완성이다.

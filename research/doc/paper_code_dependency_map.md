@@ -1,6 +1,6 @@
 # Odyssey 논문–코드–의존성 대응표
 
-최종 갱신: 2026-08-20  
+최종 갱신: 2026-08-27
 대상 논문: `research/paper/odyssey.pdf`  
 코드 기준: `a157205` 및 현재 작업 트리  
 대상 profile: `odyssey-modernized`
@@ -10,7 +10,7 @@
 - **논문이 요구하는 것:** 자연어 목표를 계획하고 관련 skill을 검색·선택·실행한 뒤 관측 결과로 성공을 판단한다.
 - **현재 확인한 것:** 주요 기능의 코드 위치와 dependency 역할, Odyssey 추가 primitive 22개와 compositional skill 183개의 대응을 확인했다.
 - **연구자가 결정한 것:** 연산 부담을 고려해 top-5를 기본 retrieval profile로 고정하고 top-10은 별도 profile로 분리한다. 논문에 정확한 checkpoint가 명시되지 않았으므로 공개 코드 설정의 encoder를 modernized 기준으로 사용한다.
-- **구현에서 정비할 것:** exact candidate 검증, optional dependency 격리, clean-install lock과 corpus/index 재로드 회귀를 만든다.
+- **구현에서 정비할 것:** exact candidate 검증, optional dependency 격리와 clean-install lock을 만든다. corpus/index 재로드 회귀는 완료했다.
 - **실행 시점:** 위 조건을 먼저 고정한 뒤 MineMA와 Minecraft server를 연결한다. legacy runtime 비교 실행은 요구하지 않는다.
 
 이 문서의 항목은 다음 네 종류로 읽는다.
@@ -57,7 +57,7 @@ goal + constraints + environment observation
 | Primitive skill | compositional skill이 호출할 안정된 저수준 동작 제공 | `skill_library/skill/primitive`, `odyssey/control_primitives`, `control_primitives_context/mineflayer.js` | Mineflayer, pathfinder, tool, collectblock | [40개 working manifest](../manifest/odyssey_primitive_40.json) 작성. runtime fixture와 contract 위험 수정은 남음 |
 | Compositional skill | 이름, code, description을 가진 재사용 skill이며 다른 skill을 재귀 호출 가능 | `skill_library/skill/compositional`, `skill/skills.json` | JavaScript executor와 primitive corpus | 183 code·description·JSON entry 동기화와 파일별 checksum 완료 |
 | Skill description | 전체 program code에서 자연어 설명을 얻고 retrieval corpus로 사용 | `skill_library/skill/description`, `SkillManager.generate_skill_description` | 논문상 LLM; 현재 저장 corpus | 고정 corpus는 존재. 생성 경로는 비활성·불완전 |
-| Semantic skill retrieval | 자연어 context와 descriptions를 같은 encoder로 embedding하고 유사도 순으로 candidate 반환 | `agents/skill.py: SkillManager.retrieve_skills` | Sentence Transformers → LangChain embedding adapter → Chroma | 공개 코드 encoder, top-5 기본·top-10 별도 정책 선정. revision, metric과 persist/reload 회귀는 미고정 |
+| Semantic skill retrieval | 자연어 context와 descriptions를 같은 encoder로 embedding하고 유사도 순으로 candidate 반환 | `agents/skill.py: SkillManager.retrieve_skills`, `odyssey/retrieval_embedding.py` | Sentence Transformers → LangChain embedding adapter → Chroma | L2·top-5 기본·top-10 별도 profile 고정. 183개 fresh index와 별도 프로세스 reload에서 후보 순서·score 동일성 통과 |
 | Planner QA retrieval | subgoal context를 만들기 위한 별도 QA cache 검색 | `agents/planner.py: PlannerAgent`, `curriculum/vectordb` | Sentence Transformers, Chroma, planner/MineMA endpoint | skill retrieval과 다른 DB임. eager initialization과 분리 필요 |
 | Planner | goal, constraints, observation, completed/failed task를 받아 combat·farming·explore task를 제안·분해 | `agents/planner.py`, `Odyssey.learn`, `Odyssey.inference` | MineMA planner/QA model, LangChain message types | 기능은 존재. 세 mode별 입력·출력 fixture 필요 |
 | Actor | task/context/feedback와 candidate를 받아 candidate의 정확한 program name을 반환 | `agents/actor.py`, `Odyssey.step` | MineMA actor endpoint, LangChain messages, Babel parser | unknown name을 첫 candidate로 바꾸는 silent fallback 수정 필요 |
@@ -87,8 +87,11 @@ skill/skills.json                         sha256 0be22fdc338d4db199c75d60ad6455e
 conf/config.json                          sha256 504cea1fc2489aff6e38f9c1000aabbc704bfe8c3ed5224778a9e9bf4d7113f5
 requirements.txt                          sha256 4afa65234cd0419f5e2b31b9c8b14c442c69fab535458eacdcf190ef37f2ecca
 mineflayer/package-lock.json              sha256 5555e896e0c5d19c635965bc9338b0cd60a248092bc9c8ff65a6c678943a6b7c
-manifest/odyssey_primitive_40.json         sha256 f151af4cac599391f5d14d584cc7f6a9f751db7cd04d5ea45b0e30ce11db3af8
+manifest/odyssey_primitive_40.json         sha256 e9dec40c7ff6ca7cb8b3a7f6d7ba4fc210890f75d47226e85ffc8d57361cdecb
 manifest/odyssey_skill_corpus.sha256       sha256 31a4c1e3f7672a7a422628ddb9701b485286b25bb3edd67e403aeb9eaab73861
+manifest/odyssey_semantic_encoder.json     sha256 490f83ed1dc61bbee9645d2985a9ee369e2b73d9b648f59f3aabf3cd94642c6e
+log/semantic_retrieval_smoke_2026-08-27.json sha256 b39d4838001a9da4bb1bda8a5fdc7b0a1921496cb66d767669296234e87704a5
+log/semantic_retrieval_profiles_2026-08-27.json sha256 ee6e732eb797d6f09c211978d5b4a3df158ce6b30b83dd2cf3272d8bf5585e6f
 ```
 
 `odyssey_skill_corpus.sha256`에는 compositional code 183개, 대응 description 183개와 실제 runtime bundle인 `skills.json` 1개가 들어 있다. 저장소 루트에서 `sha256sum --check --quiet research/manifest/odyssey_skill_corpus.sha256`로 367개 항목을 한 번에 확인한다.
@@ -110,7 +113,7 @@ Voyager 부록 A.4와 현재 `control_primitives_context`를 함께 보면 상�
 
 이 18개 목록은 Odyssey 부록이 상속분을 다시 열거하지 않기 때문에 Voyager 부록과 공개 prompt context를 결합한 working map이다. 따라서 현재 파일 11개를 더해 수를 맞추지 않고, 각 interface가 modernized Mineflayer에서 호출 가능한지를 회귀 fixture로 확인해야 최종 고정된다.
 
-전체 40개 항목의 논문 contract, source path, 주 호출 API와 정적 판정은 [`odyssey_primitive_40.json`](../manifest/odyssey_primitive_40.json)에 고정했다. 실제 함수 파일은 syntax 검사를 통과했다. `control_primitives_context/mineflayer.js`는 top-level `await` 예시를 포함한 prompt fragment이므로 실행 파일이 아니라 외부 API 선언 근거로만 취급한다. 정적 감사에서 `goto`의 `bot.entity.positon` 오타, `getAnimal`의 대입 조건·오타와 유인 동작 불일치 등은 runtime 합격을 막는 contract 위험으로 분리했다.
+전체 40개 항목의 논문 contract, source path, 주 호출 API와 정적 판정은 [`odyssey_primitive_40.json`](../manifest/odyssey_primitive_40.json)에 고정했다. 실제 함수 파일은 syntax 검사를 통과했다. `control_primitives_context/mineflayer.js`는 top-level `await` 예시를 포함한 prompt fragment이므로 실행 파일이 아니라 외부 API 선언 근거로만 취급한다. `goto`의 위치 오타·종료 조건과 `getAnimal`의 대입 조건·동물 유인 불일치는 수정했으며 offline fixture 14/14을 통과했다. `getAnimal(cow)`은 목표 유인, `goto`는 block-grid 거리 1.414와 `onError` 없음으로 2026-08-27 Minecraft online fixture를 각각 통과했다. 나머지 primitive contract 위험의 수정·검증은 남아 있다.
 
 ## 5. 재현 contract 초안
 
@@ -128,6 +131,8 @@ Voyager 부록 A.4와 현재 `control_primitives_context`를 함께 보면 상�
 - query 원문, `k`, candidate 이름과 score
 
 현재 `conf/config.json`은 `paraphrase-multilingual-MiniLM-L12-v2` 경로를 사용한다. 논문에서 정확한 checkpoint를 특정한 근거는 확인되지 않았으므로, 이 값을 논문 확정값이 아닌 공개 코드 설정의 modernized 재현 기준으로 사용한다. 검색 k는 연산 부담을 고려해 top-5를 기본값으로 고정하고 top-10은 별도 retrieval profile에서만 사용한다.
+
+[`odyssey_semantic_encoder.json`](../manifest/odyssey_semantic_encoder.json)은 공개 checkpoint revision `e8f8c211226b894fcb81acc59f3b34ba3efd5f42`, PyTorch safetensors runtime에 필요한 11개 canonical artifact, 384차원·길이 128·attention-mask mean pooling·대소문자 유지·normalization 없음·float32 조건을 기록한다. LangChain adapter가 document와 query 모두에서 newline을 ASCII space로 치환하는 동작도 입력 contract로 고정했다. CPU encoder fixture는 `(3, 384)` 출력과 반복 오차 `0.0`으로 통과했다. 이어 183개 description을 L2 index에 넣은 [top-5 smoke](../log/semantic_retrieval_smoke_2026-08-27.json)에서 영어 3개·한국어 1개 query의 기대 skill이 모두 rank 1로 반환됐다. [profile fixture](../log/semantic_retrieval_profiles_2026-08-27.json)는 top-5를 기본값, top-10을 별도 profile로 실행해 두 profile 모두 known-query recall `4/4`를 기록했고, fresh index와 별도 프로세스 reload 사이의 모든 후보 순서가 같고 최대 score 차이가 `0.0`임을 확인했다.
 
 ### 5.2 Actor selection
 
@@ -210,8 +215,8 @@ HTTP timeout, non-2xx, disconnected bot, JavaScript evaluation error와 critic v
 ### 남은 구현·검증 항목
 
 1. **Primitive 40개 runtime 검증:** 40개 working manifest는 작성했다. Odyssey 추가 22개의 source상 contract 위험을 먼저 수정하고, Voyager 상속 18개를 포함한 interface별 실행 fixture를 통과해야 runtime manifest로 승격할 수 있다.
-2. **Encoder 고정:** 선택한 공개 코드 encoder의 정확한 revision·checksum과 전처리·normalization을 manifest에 고정해야 한다.
-3. **Retrieval profile 회귀:** 기본 top-5와 별도 top-10이 같은 corpus·metric에서 재현되는지 known-query fixture로 확인해야 한다.
+2. **Encoder 고정 `[x]`:** 공개 코드 encoder의 revision·checksum과 전처리·normalization을 manifest에 고정하고 CPU runtime fixture를 통과했다.
+3. **Retrieval profile 회귀 `[x]`:** L2 기반 기본 top-5와 별도 top-10 모두 known-query recall `4/4`로 통과했고, fresh index와 별도 프로세스 reload의 후보 순서와 score가 일치했다.
 4. **Dynamic skill lifecycle:** `Odyssey.learn`의 `add_new_skill` 호출은 주석 처리돼 있고 `generate_skill_description`은 초기화되지 않은 `self.llm`을 참조한다. 고정-library Odyssey baseline과 Voyager/Full profile을 분리한다.
 5. **Actor validation:** substring match 뒤 실패 시 첫 skill을 선택하는 현재 동작은 논문의 exact program 선택 contract와 맞지 않는다.
 6. **Critic 범위:** 일반 LLM critic 외에 crafting table/pickaxe/diamond만 처리하는 hard-coded subgoal verifier가 있다.
@@ -233,8 +238,8 @@ README의 Mineflayer 버전과 mod bundle 설명은 이번 감사에서 현재 l
 
 1. **Primitive 기능 고정 `[~]`:** 논문의 primitive 40개가 어느 함수·Mineflayer API에 대응하는지 working manifest를 작성했다. source상 contract 위험 수정과 runtime interface fixture는 남았다.
 2. **Skill library 동일성 보장 `[x]`:** 183개 compositional skill과 자연어 description, 동기화된 runtime `skills.json`의 파일별 checksum을 기록하고 검증했다.
-3. **Semantic encoder 고정:** 공개 코드 checkpoint의 정확한 revision·checksum과 전처리를 retrieval manifest에 고정한다.
-4. **후보 검색 재현:** index를 다시 열어도 같은 known query에서 기본 top-5와 별도 top-10 profile 후보가 나오는지 저장한다.
+3. **Semantic encoder 고정 `[x]`:** 공개 코드 checkpoint의 revision·checksum과 전처리를 고정하고 실제 384차원 출력과 반복 오차 `0.0`을 확인했다.
+4. **후보 검색 재현 `[x]`:** 183개 corpus와 네 known query에서 기본 top-5·별도 top-10을 통과했고, index를 별도 프로세스에서 다시 열어도 후보 순서와 score가 유지됐다.
 5. **새 환경 설치 재현:** 기능별 dependency를 분리한 lock으로 빈 환경에서 설치·import·index load가 가능한지 확인한다.
 
 ### Server 통합 검증 — 위 조건 이후

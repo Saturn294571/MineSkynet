@@ -16,6 +16,10 @@ from .agents import SkillManager
 
 # add llama
 from .agents.llama import call_with_messages, ModelType
+from .retrieval_embedding import (
+    DEFAULT_SKILL_RETRIEVAL_PROFILE,
+    SKILL_RETRIEVAL_PROFILES,
+)
 from .utils.logger import get_logger, Timer
 
 # TODO: remove event memory
@@ -47,7 +51,9 @@ class Odyssey:
         critic_agent_temperature: float = 0,
         critic_agent_mode: str = "auto",
         skill_manager_temperature: float = 0,
-        skill_manager_retrieval_top_k: int = 10,
+        skill_manager_retrieval_top_k: int = SKILL_RETRIEVAL_PROFILES[
+            DEFAULT_SKILL_RETRIEVAL_PROFILE
+        ],
         openai_api_request_timeout: int = 240,
         ckpt_dir: str = "ckpt",
         skill_library_dir: str = "./skill_library",

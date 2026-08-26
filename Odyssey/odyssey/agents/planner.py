@@ -10,10 +10,10 @@ from odyssey.utils.json_utils import fix_and_parse_list, fix_and_parse_json
 # from langchain.schema import HumanMessage, SystemMessage
 # from langchain.vectorstores import Chroma
 
-from langchain_community.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_community.vectorstores import Chroma
 
+from odyssey.retrieval_embedding import build_retrieval_embeddings
 from odyssey.utils.logger import get_logger
 
 # llama
@@ -61,7 +61,7 @@ class PlannerAgent:
         # vectordb for qa cache
         self.qa_cache_questions_vectordb = Chroma(
             collection_name="qa_cache_questions_vectordb",
-            embedding_function=HuggingFaceEmbeddings(model_name=embedding_model),
+            embedding_function=build_retrieval_embeddings(embedding_model),
             persist_directory=f"{ckpt_dir}/curriculum/vectordb",
         )
         assert self.qa_cache_questions_vectordb._collection.count() == len(

@@ -1,6 +1,6 @@
 # MineSkynet 마일스톤 인덱스
 
-최종 갱신: 2026-08-20
+최종 갱신: 2026-08-27
 
 ## 방향
 
@@ -28,16 +28,15 @@
 
 ## 문서 구성
 
-- 판단 원칙: [`PROMPT.md`](../../PROMPT.md)
+- 판단 원칙: [`AGENTS.md`](../../AGENTS.md)
 - 연구 질문과 제안 구조: [`MineSkynet_blueprint.md`](../MineSkynet_blueprint.md)
 - [Odyssey 재현과 현대화 마일스톤](./modernization_milestone.md): 논문 기능을 안전한 환경에서 실행하기 위한 현재 작업
 - [MineSkynet 연구 마일스톤](./research_milestone.md): modernized Odyssey 이후의 이기종 edge-cloud 실험
 - [논문–코드–의존성 대응표](../paper_code_dependency_map.md): 구현 판단이 필요할 때 내려가 보는 기술 근거
 - 실행 환경과 명령: [`research/README.md`](../../README.md)
-- 2026-08-20 실행 계층 증거: [`E0_test_evidence_2026-08-20.md`](../E0_test_evidence_2026-08-20.md)
-- 과거 진단과 방향 전환 이유: [`MVP_report.md`](../MVP_report.md)
+- 과거 진단·실행 증거와 현재 작업 보고: [`report_log.md`](../report_log.md)
 
-처음 읽는 사람은 원칙 → 블루프린트 → 이 인덱스 순서만 보면 된다. 구현 세부사항과 원시 증거는 판단 근거가 필요할 때만 내려가 읽는다. `MVP_report.md`의 E0~E4는 과거 진단 이름이며, 현재 작업 순서와 완료 판단은 이 인덱스와 두 마일스톤 문서만 기준으로 한다.
+처음 읽는 사람은 원칙 → 블루프린트 → 이 인덱스 순서만 보면 된다. 구현 세부사항과 원시 증거는 판단 근거가 필요할 때만 내려가 읽는다. 과거 E0~E4는 진단 이름이며, 현재 작업 순서와 완료 판단은 이 인덱스와 두 마일스톤 문서만 기준으로 한다.
 
 ## 현재 상태
 
@@ -49,7 +48,7 @@
 - [x] 논문 기능을 공개 코드, model/service와 dependency profile에 1차 대응하고 contract 및 불일치를 문서화했다.
 - [~] primitive 40개의 논문–source working manifest를 작성했다. Odyssey 추가 22개는 source와 대응하지만 Voyager 상속 18개의 runtime fixture와 확인된 contract 위험 수정은 남았다.
 - [x] compositional code·JSON entry·description 183개를 동기화하고 파일별 checksum을 고정했다. code가 없는 `killOnePlayer.txt`는 기본 corpus에서 제외했다.
-- [~] 공개 코드의 Sentence Transformer checkpoint를 modernized 기준으로 선정하고 top-5 기본·top-10 별도 profile 정책을 정했다. encoder revision·metric과 실제 후보 결과를 고정한 retrieval fixture는 아직 없다.
+- [x] 공개 코드 Sentence Transformer의 revision·변환 조건과 CPU 출력을 고정했다. 183개 corpus의 기본 top-5와 별도 top-10은 known-query recall `4/4`를 기록했고, fresh index와 별도 프로세스 reload의 후보 순서·score가 일치했다.
 - [ ] MineMA actor, recursive prerequisite, planner–actor–critic을 포함한 Odyssey end-to-end baseline은 아직 재현되지 않았다.
 - [ ] 논문 핵심 기능 전체를 실행하는 `odyssey-modernized` 완료 commit과 clean-install 회귀는 아직 없다.
 - [ ] `mineskynet-core` 브랜치는 modernized 완료 뒤 생성한다.

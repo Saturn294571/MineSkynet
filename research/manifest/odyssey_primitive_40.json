@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-08-20",
-  "code_baseline": "234238d",
+  "generated_on": "2026-08-27",
+  "code_baseline": "working tree based on 5fd2c51; primitive runtime changes pending commit",
   "purpose": "논문의 primitive 40개가 modernized 코드의 어느 함수·Mineflayer API contract에 대응하는지 고정한다.",
   "counts": {
     "total": 40,
@@ -23,6 +23,8 @@
     "contract risk": "함수는 존재하지만 contract를 깨뜨릴 가능성이 source에서 확인됨",
     "signature drift": "논문과 source의 parameter 형태가 다름",
     "blocked": "source상 명백한 결함으로 정상 contract를 주장할 수 없음",
+    "offline-verified": "mock bot fixture로 입력 검증, 분기, 실패 처리와 state 판정을 확인함",
+    "online-verified": "Minecraft server와 Mineflayer bridge에서 상태 기반 행동 결과를 확인함",
     "runtime fixture pending": "Minecraft server를 사용하는 행동 검증은 아직 수행하지 않음"
   },
   "primitives": [
@@ -506,9 +508,9 @@
       "primary_interfaces": [
         "bot.entity.position",
         "bot.pathfinder.goto",
-        "GoalBlock"
+        "GoalNear"
       ],
-      "verification": "blocked: source uses bot.entity.positon typo and restrictive loop condition"
+      "verification": "online-verified: corrected GoalNear block-grid contract passed on 2026-08-27 at distance 1.414 with no onError; 6 offline fixtures cover the regression, finite coordinates, final-distance check and timeout"
     },
     {
       "name": "getAnimal",
@@ -522,7 +524,7 @@
         "exploreUntil",
         "bot.pathfinder.goto"
       ],
-      "verification": "blocked: assignment/typo branches and no verified follow behavior"
+      "verification": "online-verified: cow lure reached the target without onError on 2026-08-27; 8 offline fixtures cover all four food mappings, missing-input failures and target-arrival check"
     }
   ]
 }

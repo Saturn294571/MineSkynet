@@ -4,24 +4,26 @@
 
 ## 문서 읽는 순서
 
-1. [PROMPT.md](PROMPT.md): 프로젝트 전체의 판단 원칙
+1. [AGENTS.md](AGENTS.md): 프로젝트 전체의 판단 원칙
 2. [MineSkynet_blueprint.md](doc/MineSkynet_blueprint.md): 연구 질문, 제안 구조와 평가 방법
 3. [milestone_index.md](doc/milestone_goal/milestone_index.md): 현재 상태와 바로 다음 단계
 4. [modernization_milestone.md](doc/milestone_goal/modernization_milestone.md): Odyssey 재현·현대화 완료 조건
 5. [research_milestone.md](doc/milestone_goal/research_milestone.md): modernized 기반의 MineSkynet 연구 단계
 
-구현을 확인할 때만 [paper_code_dependency_map.md](doc/paper_code_dependency_map.md)를 보고, 실행 근거가 필요할 때는 [E0 증거](doc/E0_test_evidence_2026-08-20.md)로 내려간다.
+구현을 확인할 때만 [paper_code_dependency_map.md](doc/paper_code_dependency_map.md)를 보고, 실행 근거가 필요할 때는 [E0 증거](doc/E0_test_evidence_2026-08-20.md)로 내려간다. 누적 작업 보고는 [report_log.md](doc/report_log.md)에 보존하고, 교수님께 제시할 내용은 [labmeeting_temp.md](doc/labmeeting_temp.md)에서 선별·편집한다.
 
-재현 자산은 다음 두 manifest에서 확인한다.
+재현 자산은 다음 세 manifest에서 확인한다.
 
 - [primitive 40 mapping](manifest/odyssey_primitive_40.json): 논문의 primitive가 현재 어느 함수·Mineflayer API contract에 대응하는지 기록
 - [skill corpus checksum](manifest/odyssey_skill_corpus.sha256): compositional code 183개, description 183개와 runtime `skills.json`의 SHA-256 기록
+- [semantic encoder contract](manifest/odyssey_semantic_encoder.json): 자연어를 vector로 바꾸는 checkpoint revision, artifact checksum과 변환 조건 기록
 
 저장소 루트에서 다음 명령으로 형식과 파일 동일성을 확인할 수 있다.
 
 ```bash
 jq '.counts, (.primitives | length)' research/manifest/odyssey_primitive_40.json
 sha256sum --check --quiet research/manifest/odyssey_skill_corpus.sha256
+Odyssey/.venv/bin/python Odyssey/scripts/semantic_encoder_fixture.py
 ```
 
 아래 명령은 각 터미널에서 먼저 저장소 루트로 이동한 뒤 실행한다. 최초 진입 경로를 제외한 저장소 내부 경로는 상대경로로 표기한다.
@@ -381,6 +383,74 @@ PASS: mineWoodLog collected at least one wood log
 ```
 
 단순히 `Wood log mined.`가 출력되는 것만으로는 충분하지 않다. 성공 기준은 실제 `*_log` 인벤토리 수량 증가다.
+
+### 3.7 Primitive runtime online fixture
+
+`goto`와 `getAnimal`의 실제 Minecraft 행동을 확인한다. 이 fixture에는 Minecraft server와 Mineflayer bridge만 필요하며 MineMA backend는 필요하지 않다. 먼저 3.2, 3.3, 3.5 절에 따라 server·bridge·bot을 준비한다.
+
+장애물이 없는 방향으로 6블록 이동하고 최종 위치가 목표 반경 2블록 안인지 확인한다.
+
+```bash
+cd ~/Documents/MineSkynet
+python3 Odyssey/scripts/primitive_runtime_online.py goto --dx 6
+```
+
+`getAnimal`은 fixture 준비 명령과 primitive 실행을 분리한다. 아래 예시는 기존 cow를 정리하고 bot 근처에 cow 한 마리와 wheat를 준비한 뒤, 현재 위치에서 x축으로 8블록 떨어진 목표까지 유인한다.
+
+```bash
+cd ~/Documents/MineSkynet/Odyssey
+docker compose exec mc rcon-cli "execute at bot run kill @e[type=minecraft:cow,distance=..32]"
+docker compose exec mc rcon-cli "give bot minecraft:wheat 1"
+docker compose exec mc rcon-cli "execute at bot run summon minecraft:cow ~2 ~ ~"
+
+cd ~/Documents/MineSkynet
+python3 Odyssey/scripts/primitive_runtime_online.py get-animal --type cow --dx 8
+```
+
+통과 기준은 `GoalNear`와 동일하게 좌표를 내림한 block-grid에서 `goto`의 bot–target 거리가 2블록 이하이고, `getAnimal`은 같은 bot–target 조건과 cow–bot 실수 거리 4블록 이하를 만족하면서 `onError`가 없는 것이다. 따라서 block-grid 기준을 만족하면 bot 중심과 실수 target 사이의 출력 거리(`bot_distance_to_target`)는 2를 조금 넘을 수 있으며, 실제 판정값은 `bot_block_distance_to_target`이다. 지형 때문에 경로가 막히면 실패를 성공으로 바꾸지 말고, 열린 방향에 맞춰 `--dx`, `--dy`, `--dz`만 조정해 다시 실행한다. 실행이 끝나면 필요에 따라 다음 명령으로 cow를 정리한다.
+
+```bash
+cd ~/Documents/MineSkynet/Odyssey
+docker compose exec mc rcon-cli "execute at bot run kill @e[type=minecraft:cow,distance=..32]"
+```
+
+### 3.8 Semantic encoder contract fixture
+
+자연어 subgoal과 skill description이 동일한 공개 코드 checkpoint와 전처리 조건으로 384차원 vector가 되는지 확인한다. Minecraft server, Mineflayer bridge와 MineMA backend는 필요하지 않다.
+
+다음 정적 검사는 checkpoint revision, canonical model·tokenizer artifact checksum, max sequence length와 pooling 설정을 확인하며 model inference는 수행하지 않는다.
+
+```bash
+cd ~/Documents/MineSkynet
+Odyssey/.venv/bin/python Odyssey/scripts/semantic_encoder_fixture.py
+```
+
+정적 검사가 통과한 뒤 다음 명령으로 CPU에서 실제 embedding shape, 유한값, 반복 오차와 newline 전처리를 확인한다. 이 실행은 local checkpoint만 사용하며 검색 순위나 retrieval 품질까지 검증하지 않는다.
+
+```bash
+cd ~/Documents/MineSkynet
+Odyssey/.venv/bin/python Odyssey/scripts/semantic_encoder_fixture.py --run-model --device cpu
+```
+
+성공하면 마지막 줄에 `PASS: semantic encoder contract fixture`가 출력된다. 전체 JSON 출력은 runtime manifest의 관찰값과 지원 dependency 조합을 확정하는 근거로 사용한다.
+
+다음 smoke는 같은 encoder로 183개 skill description을 indexing하고 영어·한국어 known query의 top-5 candidate와 L2 score를 출력한다.
+
+```bash
+cd ~/Documents/MineSkynet
+Odyssey/.venv/bin/python Odyssey/scripts/semantic_retrieval_smoke.py
+```
+
+2026-08-27 CPU 실행에서는 183개가 모두 index에 들어갔고 네 query의 기대 skill이 모두 rank 1로 반환돼 recall@5 `4/4`를 기록했다. 원시 candidate와 score는 [실행 로그](log/semantic_retrieval_smoke_2026-08-27.json)에 남겼다.
+
+다음 정식 fixture는 top-5를 기본 profile, top-10을 별도 profile로 실행한다. fresh index를 만든 뒤 별도 프로세스에서 저장 index를 다시 열어, candidate 순서와 L2 score가 유지되는지도 함께 검사한다.
+
+```bash
+cd ~/Documents/MineSkynet
+Odyssey/.venv/bin/python Odyssey/scripts/semantic_retrieval_fixture.py
+```
+
+2026-08-27 CPU 실행에서 두 profile 모두 네 query의 기대 skill을 포함해 recall@5·recall@10 `4/4`를 기록했다. fresh index와 reload의 모든 후보 순서가 같았고 최대 score 차이는 `0.0`이었다. top-10 전체 후보와 score, reload 비교 결과는 [profile 실행 로그](log/semantic_retrieval_profiles_2026-08-27.json)에 고정했다.
 
 ## 알려진 주의사항
 
