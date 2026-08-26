@@ -68,7 +68,9 @@ def load_embedding_module():
     return module
 
 
-def static_checks(manifest: dict) -> dict:
+def static_checks(
+    manifest: dict, wrapper_profile: str | None = None
+) -> dict:
     checkpoint = manifest["checkpoint"]
     model_dir = REPO_ROOT / checkpoint["local_path"]
     failures = []
@@ -125,7 +127,17 @@ def static_checks(manifest: dict) -> dict:
     if not revision_passed:
         failures.append("checkpoint revision metadata mismatch")
 
-    expected_packages = manifest["observed_environment"]["packages"]
+    profile = wrapper_profile or manifest["retrieval_wrapper_profiles"][
+        "default"
+    ]
+    if profile == "modern-partner":
+        expected_packages = manifest["retrieval_wrapper_profiles"][profile][
+            "packages"
+        ]
+    else:
+        expected_packages = manifest["retrieval_wrapper_profiles"][
+            "legacy-community"
+        ]["packages"]
     observed_packages = package_versions(list(expected_packages))
     package_matches = {
         name: observed_packages[name] == expected
@@ -150,6 +162,7 @@ def static_checks(manifest: dict) -> dict:
 
     return {
         "passed": not failures,
+        "wrapper_profile": profile,
         "failures": failures,
         "checkpoint_revision": metadata_revision,
         "revision_passed": revision_passed,
@@ -161,13 +174,18 @@ def static_checks(manifest: dict) -> dict:
     }
 
 
-def runtime_checks(manifest: dict, device: str) -> dict:
+def runtime_checks(
+    manifest: dict, device: str, wrapper_profile: str | None
+) -> dict:
     import numpy as np
 
     embedding_module = load_embedding_module()
     model_dir = REPO_ROOT / manifest["checkpoint"]["local_path"]
     embeddings = embedding_module.build_retrieval_embeddings(
-        str(model_dir), device=device, local_files_only=True
+        str(model_dir),
+        device=device,
+        local_files_only=True,
+        wrapper_profile=wrapper_profile,
     )
     inputs = manifest["runtime_fixture"]["fixed_inputs"]
     first = np.asarray(embeddings.embed_documents(inputs), dtype=np.float32)
@@ -199,6 +217,9 @@ def runtime_checks(manifest: dict, device: str) -> dict:
     return {
         "passed": all(checks.values()),
         "device": device,
+        "wrapper_profile": embedding_module.resolve_wrapper_profile(
+            wrapper_profile
+        ),
         "shape": list(first.shape),
         "dtype": str(first.dtype),
         "checks": checks,
@@ -214,12 +235,20 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--run-model", action="store_true")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--wrapper-profile",
+        choices=["legacy-community", "modern-partner"],
+    )
     args = parser.parse_args()
 
     manifest = read_json(args.manifest.resolve())
-    result = {"static": static_checks(manifest)}
+    result = {
+        "static": static_checks(manifest, args.wrapper_profile)
+    }
     if args.run_model and result["static"]["passed"]:
-        result["runtime"] = runtime_checks(manifest, args.device)
+        result["runtime"] = runtime_checks(
+            manifest, args.device, args.wrapper_profile
+        )
     result["passed"] = result["static"]["passed"] and (
         not args.run_model or result.get("runtime", {}).get("passed", False)
     )

@@ -50,14 +50,14 @@ Voyager의 automatic curriculum, code generation/repair, self-verification과 dy
 - [x] CPU runtime fixture에서 `(3, 384)` float32 출력, 유한값과 반복·newline 전처리 오차 `0.0`을 확인했다.
 - [x] 183개 description을 indexing한 top-5 smoke에서 영어 3개·한국어 1개 query의 기대 skill이 모두 rank 1로 반환됐다.
 - [x] top-5 기본·top-10 별도 profile을 구현하고, fresh index와 별도 프로세스 reload에서 네 query의 후보 순서와 score가 모두 유지됨을 확인했다.
+- [x] 신규 LangChain partner wrapper를 두 clean 환경에서 검증하고 최종 retrieval lock과 기본 profile로 승인했다. Legacy와의 미세한 L2 score 차이는 후보 순서와 recall에 영향을 주지 않는 내부 수치 차이로 기록했다.
 
 코드 감사·수정·offline 자동 검증과 결과 문서화는 구현 작업으로 진행한다. Minecraft server·bridge 기동, world/entity 준비와 장시간 관찰은 연구자가 수행하며, 실행 전 정확한 명령과 확인할 결과를 제공한다.
 
 ### 이어서 수행할 순서
 
-1. LangChain embedding·Chroma deprecated wrapper와 telemetry warning의 지원 경계를 정리한다.
-2. `feedAnimals`·`cookFood`를 수정하고 farming/cooking fixture를 실행한다.
-3. 연구자가 combat 성공 기준과 `/gamemode` 허용 범위를 결정한 뒤 `killMonsters`를 수정·검증한다.
+1. `feedAnimals`·`cookFood`를 수정하고 farming/cooking fixture를 실행한다.
+2. 연구자가 combat 성공 기준과 `/gamemode` 허용 범위를 결정한 뒤 `killMonsters`를 수정·검증한다.
 
 오늘은 MineMA actor, planner–actor–critic end-to-end, 능동 skill 생성과 legacy 성능 비교로 범위를 확장하지 않는다. 진행 중 결과는 component 성공을 전체 완료로 올리지 않고 이 절의 checklist와 아래 세부 상태에 함께 반영한다.
 
@@ -72,11 +72,11 @@ Voyager의 automatic curriculum, code generation/repair, self-verification과 dy
 - [x] 논문의 각 기능을 source file, dependency, model과 input/output에 연결
 - [~] task, prompt, **primitive 40 manifest**, 183 skill corpus와 checkpoint 출처·hash 고정
 - [x] dependency를 core, executor, retrieval, model, combat, training으로 1차 분류
-- [ ] 각 profile의 지원 버전, lockfile과 clean-install 절차 작성
+- [~] retrieval modern profile의 exact version lock과 clean-install 절차 작성·재설치 통과; 나머지 profile lock은 미완료
 - [~] license, 보안 경고, deprecated API와 유지보수 상태 기록
 - [x] branch 역할과 범위 기반 tag 정책 확정
 
-세부 근거와 미해결 조건은 [`paper_code_dependency_map.md`](../paper_code_dependency_map.md)에 기록했다. primitive 40개의 논문–source working manifest와 compositional code·description 183쌍의 checksum을 고정했다. **Voyager 상속 primitive 18개의 runtime interface fixture와 source상 contract 위험의 수정·검증**은 남았으며, encoder revision·전처리, retrieval 결과와 clean-install lock은 그 이후의 후속 검증이다.
+세부 근거와 미해결 조건은 [`paper_code_dependency_map.md`](../paper_code_dependency_map.md)에 기록했다. primitive 40개의 논문–source working manifest와 compositional code·description 183쌍의 checksum을 고정했다. **Voyager 상속 primitive 18개의 runtime interface fixture와 source상 contract 위험의 수정·검증**은 남았다. Encoder와 retrieval modern profile의 clean-install은 확보했으며 나머지 profile lock은 후속 검증이다.
 
 ### Minecraft 실행 계층 `[x]`
 
@@ -105,7 +105,8 @@ actor가 선택한 JavaScript skill이 실제 Minecraft 상태를 바꾸고, 오
 - [x] top-10을 별도 retrieval profile로 구성
 - [x] [profile 실행 로그](../../log/semantic_retrieval_profiles_2026-08-27.json)에 known-query recall@5 `4/4`, recall@10 `4/4`와 전체 후보·L2 score 기록
 - [x] L2 metric을 고정하고 fresh index 생성과 별도 프로세스 reload에서 두 profile의 후보 순서 동일·최대 score 차이 `0.0` 확인
-- [ ] clean environment에서 index 생성·재로드·검색 확인
+- [x] [modern retrieval lock](../../../Odyssey/requirements-retrieval-modern.lock.txt)을 서로 다른 빈 Python 3.10 환경에 설치하고 index 생성·재로드·검색 확인
+- [x] `langchain-huggingface 1.2.2`·`langchain-chroma 1.1.0`·`chromadb 1.3.5`에서 deprecated/telemetry 경고 제거와 후보 순서 동일성 통과; legacy 대비 score 최대 차이 `7.62939453125e-06`은 검색 결과에 영향을 주지 않는 내부 수치 차이로 기록
 
 Sentence Transformer와 semantic retrieval은 논문 기능이므로 제거 대상이 아니다. Chroma·LangChain은 기능을 제공하는 구현 선택이며, 변경 기준은 기능 contract, clean install, persist/reload와 유지보수 가능성이다.
 
@@ -185,7 +186,7 @@ dependency 또는 구현 고리를 변경할 때 다음만 확인한다.
 1. **Primitive 의미 고정 `[~]`:** [40개 working manifest](../../manifest/odyssey_primitive_40.json)는 작성했다. `goto`, `getAnimal`과 기타 contract 위험을 수정한 뒤 Voyager 상속 interface까지 runtime fixture로 확인한다.
 2. **Skill library 동일성 보장 `[x]`:** [checksum manifest](../../manifest/odyssey_skill_corpus.sha256)에 183개 compositional code와 자연어 description, runtime `skills.json`을 고정했다.
 3. **Semantic retrieval 재현 `[x]`:** 공개 코드 encoder의 revision·전처리와 L2 metric을 고정하고, 기본 top-5·별도 top-10 후보와 fresh-index/reload 동일성을 회귀로 남겼다.
-4. **Dependency 설치 재현:** Python/Node package를 역할별로 나누고 지원 version·lockfile·clean-install 절차를 고정한다.
+4. **Dependency 설치 재현 `[~]`:** retrieval modern profile의 exact version·clean-install을 재현하고 최종 lock으로 승인했다. 나머지 Python/Node package를 역할별로 고정한다.
 5. **Actor 실행 연결:** MineMA가 검색된 후보에서 정확한 skill을 선택하고 recursive prerequisite까지 실행하게 한다.
 6. **논문 전체 순환 연결:** planner–actor–critic의 계획·실행·검증·재계획을 대표 task로 반복 확인한다.
 7. **연구 기반 고정:** 완료 commit/tag를 `mineskynet-core`의 base로 지정한다.

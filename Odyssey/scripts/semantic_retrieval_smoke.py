@@ -72,6 +72,10 @@ def main() -> int:
     parser.add_argument("--skills", type=Path, default=DEFAULT_SKILLS)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--k", type=int, default=5)
+    parser.add_argument(
+        "--wrapper-profile",
+        choices=["legacy-community", "modern-partner"],
+    )
     args = parser.parse_args()
     if args.k <= 0:
         parser.error("--k must be positive")
@@ -81,21 +85,23 @@ def main() -> int:
     model_dir = REPO_ROOT / manifest["checkpoint"]["local_path"]
     embedding_module = load_embedding_module()
     embeddings = embedding_module.build_retrieval_embeddings(
-        str(model_dir), device=args.device, local_files_only=True
+        str(model_dir),
+        device=args.device,
+        local_files_only=True,
+        wrapper_profile=args.wrapper_profile,
     )
 
     names = sorted(skills)
     descriptions = [skills[name]["description"] for name in names]
     metadatas = [{"name": name} for name in names]
 
-    from langchain_community.vectorstores import Chroma
-
     with tempfile.TemporaryDirectory(prefix="odyssey-retrieval-") as temp_dir:
-        vector_store = Chroma(
+        vector_store = embedding_module.build_retrieval_vector_store(
             collection_name="odyssey_semantic_retrieval_smoke",
             embedding_function=embeddings,
             persist_directory=temp_dir,
             collection_metadata={"hnsw:space": "l2"},
+            wrapper_profile=args.wrapper_profile,
         )
         vector_store.add_texts(
             texts=descriptions,
@@ -122,7 +128,9 @@ def main() -> int:
                     "candidates": candidates,
                 }
             )
-        vector_store.persist()
+        embedding_module.persist_retrieval_vector_store(
+            vector_store, wrapper_profile=args.wrapper_profile
+        )
         del vector_store
         gc.collect()
 
@@ -136,6 +144,9 @@ def main() -> int:
         "corpus_count": len(skills),
         "index_count": index_count,
         "distance_metric": "l2",
+        "wrapper_profile": embedding_module.resolve_wrapper_profile(
+            args.wrapper_profile
+        ),
         "k": args.k,
         "device": args.device,
         "known_query_recall_at_k": sum(

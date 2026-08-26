@@ -112,6 +112,47 @@
       "torch": "1.9.0+cu102"
     }
   },
+  "retrieval_wrapper_profiles": {
+    "default": "modern-partner",
+    "legacy-community": {
+      "status": "verified baseline preserved by odyssey-modernized-retrieval-legacy-wrapper tag",
+      "packages": {
+        "langchain-core": "0.2.43",
+        "langchain-community": "0.2.19",
+        "chromadb": "0.3.29",
+        "sentence-transformers": "5.6.0",
+        "transformers": "5.14.1",
+        "torch": "2.13.0",
+        "huggingface-hub": "1.24.0",
+        "tokenizers": "0.22.2",
+        "posthog": "7.27.0",
+        "numpy": "1.26.4"
+      }
+    },
+    "modern-partner": {
+      "status": "approved modernized default; clean-install and component fixtures passed",
+      "lock": "Odyssey/requirements-retrieval-modern.lock.txt",
+      "packages": {
+        "langchain-core": "1.6.0",
+        "langchain-huggingface": "1.2.2",
+        "langchain-chroma": "1.1.0",
+        "chromadb": "1.3.5",
+        "sentence-transformers": "5.6.0",
+        "transformers": "5.14.1",
+        "torch": "2.13.0+cpu",
+        "huggingface-hub": "1.24.0",
+        "tokenizers": "0.22.2",
+        "posthog": "5.4.0",
+        "numpy": "1.26.4"
+      },
+      "telemetry": "disabled with Settings(anonymized_telemetry=False)",
+      "deprecated_wrapper_warnings": 0,
+      "legacy_candidate_order_equal": true,
+      "legacy_maximum_score_delta": 0.00000762939453125,
+      "legacy_score_observation": "maximum absolute delta recorded as an implementation-level numeric difference; candidate order and recall unchanged",
+      "merge_gate_passed": true
+    }
+  },
   "runtime_fixture": {
     "command": "Odyssey/.venv/bin/python Odyssey/scripts/semantic_encoder_fixture.py --run-model --device cpu",
     "canonical_device": "cpu",

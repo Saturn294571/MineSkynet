@@ -240,7 +240,7 @@ Minecraft execution layer는 clean install, raw action success와 대표 failure
 
 ## 2026-08-27 — Primitive runtime 결함 정리
 
-작성일: 2026-08-27  
+작성일: 2026-08-27
 대상 브랜치: `experiment/odyssey-modernized`
 
 ### 1. 논문상 기능과 작업 범위
@@ -578,3 +578,134 @@ Odyssey/.venv/bin/python Odyssey/scripts/semantic_retrieval_fixture.py
 - [공통 retrieval profile 설정](../../Odyssey/odyssey/retrieval_embedding.py)
 - [현대화 마일스톤](milestone_goal/modernization_milestone.md)
 - [논문–코드–dependency 대응표](paper_code_dependency_map.md)
+
+---
+
+## 2026-08-27 — Retrieval wrapper migration 작업 기준
+
+작성일: 2026-08-27
+기준 커밋: `9d626f6`
+
+### 1. 브랜치와 과거 기준점
+
+- 임시 작업 브랜치 `experiment/retrieval-wrapper-migration`: `langchain-huggingface`와 `langchain-chroma` 이전, telemetry 정리와 clean-install 후보 검증만 수행한다.
+- 과거 기준 annotated tag `odyssey-modernized-retrieval-legacy-wrapper`: 기존 LangChain community wrapper로 encoder와 top-5·top-10 fresh/reload fixture를 통과한 `9d626f6`을 변경 없이 보존한다.
+- 기준 브랜치 `experiment/odyssey-modernized`: migration 결과가 합격하기 전까지 기존 검증 상태를 유지한다.
+
+### 2. 병합 기준
+
+신규 wrapper 조합은 기존과 같은 encoder revision·183개 corpus·L2 조건에서 encoder contract, top-5 기본·top-10 별도 profile, fresh index와 별도 프로세스 reload를 모두 통과해야 한다. 후보 순서와 score 차이를 legacy-wrapper tag 결과와 비교하고, telemetry 경고가 실제로 제거됐으며 exact version의 clean-install 후보를 제시해야 한다.
+
+위 조건을 충족하고 연구자가 최종 dependency 조합을 승인한 뒤에만 임시 브랜치를 `experiment/odyssey-modernized`에 병합한다. 승인 전에는 기존 작동 조합을 제거하거나 신규 조합을 최종 lock으로 확정하지 않는다. 병합 뒤 임시 브랜치는 삭제하되 과거 상태는 tag와 이 보고 기록으로 보존한다.
+
+---
+
+## 2026-08-27 — Retrieval wrapper migration clean-install 검증
+
+작성일: 2026-08-27
+작업 브랜치: `experiment/retrieval-wrapper-migration`
+비교 기준: `odyssey-modernized-retrieval-legacy-wrapper` (`9d626f6`)
+
+### 1. 논문상 기능과 작업 목적
+
+이번 작업은 자연어 subgoal과 183개 skill description을 같은 encoder로 변환하고 semantic closeness 순으로 candidate를 제시하는 Odyssey 기능을 보존하면서, 제거 예정인 LangChain community wrapper와 Chroma 0.3 저장 고리를 지원되는 공식 partner package로 분리할 수 있는지 확인했다.
+
+현대화의 판정 대상은 새 package가 더 빠른지가 아니라 다음 retrieval contract의 보존 여부다.
+
+- 공개 코드 checkpoint와 text-to-vector 변환 조건 유지
+- top-5 기본·top-10 별도 profile 유지
+- 183개 corpus의 candidate 순서와 L2 score 관찰
+- fresh index와 별도 프로세스 reload의 동일성
+- clean install과 telemetry·deprecated warning 제거
+
+### 2. 호출 지점과 version 결합 감사
+
+기존 환경은 `langchain 0.2.17`, `langchain-community 0.2.19`, `langchain-core 0.2.43`, `chromadb 0.3.29`와 `posthog 7.27.0`을 사용했다. 실제 호출은 다음 세 고리에 있었다.
+
+1. `retrieval_embedding.py`: community `HuggingFaceEmbeddings` 생성
+2. `SkillManager`와 `PlannerAgent`: community `Chroma` 생성 및 저장
+3. Actor·Planner·Critic 등: `langchain.schema` message class import
+
+`chromadb 0.3.29`는 `posthog`의 상한을 고정하지 않아 현재 `posthog 7.27.0`과 함께 설치됐고, telemetry `capture()` 인자 규약이 맞지 않았다. `pip check`는 package metadata상 의존성 범위만 확인하므로 이 runtime API 불일치를 탐지하지 못했다.
+
+최신 공식 partner package의 요구 조건은 기존 `langchain-core 0.2`와 직접 공존하지 않았다. `langchain-huggingface 1.2.2`는 `langchain-core >=1.2.31`, `langchain-chroma 1.1.0`은 `chromadb >=1.3.5`와 `langchain-core >=1.1.3`을 요구했다. 따라서 import 두 줄만 바꾸지 않고 message class를 `langchain-core`로 옮기고 retrieval wrapper를 profile 경계에서 lazy import하도록 수정했다.
+
+### 3. 기존 API와 신규 API contract 비교
+
+| 항목 | Legacy community wrapper | Modern partner wrapper | 처리 |
+|---|---|---|---|
+| embedding class | `langchain_community.HuggingFaceEmbeddings` | `langchain_huggingface.HuggingFaceEmbeddings` | profile별 lazy import |
+| model 인자 | `model_name=` | `model=` | 공통 factory에서 차이 흡수 |
+| encoding 설정 | `encode_kwargs` | `encode_kwargs` | batch 32·float32·normalization 없음 유지 |
+| Chroma class | community `Chroma` | `langchain_chroma.Chroma` | 공통 vector-store factory에서 분기 |
+| persistence | DuckDB+Parquet와 명시적 `.persist()` | `PersistentClient`와 쓰기 시 자동 저장 | modern profile에서는 `.persist()` 호출 제거 |
+| score 반환 | `similarity_search_with_score`의 distance | 동일 method의 distance | L2·candidate·score를 fixture로 비교 |
+| telemetry | 기본 활성 및 `capture()` warning | `Settings(anonymized_telemetry=False)` | modern profile에서 warning 부재를 합격 조건으로 검사 |
+
+공식 Chroma migration 문서에 따르면 0.4부터 저장 형식이 DuckDB+Parquet에서 SQLite 기반으로 바뀌고 수동 `.persist()`가 제거됐다. 기존 index는 원본 연구 자산이 아니라 고정 corpus에서 재생성 가능한 파생물이므로 migration하지 않고 183개 description에서 새로 만들었다.
+
+### 4. 별도 시험 profile과 clean-install lock 후보
+
+기존 조합을 제거하지 않고 `legacy-community`와 `modern-partner` 두 wrapper profile을 추가해 시험했다. 검증과 연구자 승인 뒤 `modern-partner`를 modernized 기본값으로 전환했으며 legacy 상태는 기준 tag로 보존한다.
+
+Python 3.10.20의 빈 임시 환경에서 다음 핵심 조합을 설치했다.
+
+| Package | Candidate version |
+|---|---:|
+| `langchain-core` | 1.6.0 |
+| `langchain-huggingface` | 1.2.2 |
+| `langchain-chroma` | 1.1.0 |
+| `chromadb` | 1.3.5 |
+| `posthog` | 5.4.0 |
+| `sentence-transformers` | 5.6.0 |
+| `transformers` | 5.14.1 |
+| `torch` | 2.13.0+cpu |
+| `huggingface-hub` | 1.24.0 |
+| `tokenizers` | 0.22.2 |
+| `numpy` | 1.26.4 |
+
+첫 빈 환경의 전체 resolved version을 lock 후보에 기록한 뒤, 두 번째 빈 환경에 CPU PyTorch와 이 파일을 그대로 설치했다. 두 환경 모두 `pip check`에서 broken requirement가 없었다. 승인 뒤 파일을 `requirements-retrieval-modern.lock.txt`로 고정하고 기본 `requirements.txt`에서 참조하도록 연결했다. 최종 lock SHA-256은 `3fd810577c7f2bb40116bca05fa2b4f2a0bc481c7c0f713b046fbc94a463dbb2`다.
+
+### 5. Encoder·retrieval·warning 결과
+
+두 번째 clean 환경에서 encoder fixture는 `(3, 384)` float32, 반복 오차 `0.0`, newline/space 오차 `0.0`과 기존과 같은 embedding SHA-256 `4f5de76040931c0558f63c1e6083f6779c61f1611b81f9d456aa9b7263d32c6b`로 통과했다. 즉 wrapper 교체가 text-to-vector 결과를 바꾸지 않았다.
+
+신규 Chroma index의 독립 fixture 결과는 다음과 같다.
+
+| 검사 | 결과 |
+|---|---:|
+| index count | 183 |
+| fresh top-5 recall@5 | 4/4 |
+| fresh top-10 recall@10 | 4/4 |
+| reload top-5·top-10 recall | 각각 4/4 |
+| fresh/reload candidate 순서 | 전부 동일 |
+| fresh/reload 최대 score 차이 | `0.0` |
+| deprecated wrapper warning | 없음 |
+| telemetry warning | 없음 |
+
+따라서 신규 partner wrapper 자체의 encoder → index 생성 → reload → 검색 contract와 telemetry 비활성화는 통과했다.
+
+### 6. Legacy 대비 score 차이와 최종 판단
+
+Legacy와 modern의 top-10 후보 순서는 네 query에서 모두 같았지만 L2 score는 다음만큼 달랐다.
+
+| Query | Legacy–modern 최대 절대 score 차이 |
+|---|---:|
+| `Craft a wooden pickaxe.` | `1.9073486328125e-06` |
+| `Mine diamond ore using an iron pickaxe.` | `2.86102294921875e-06` |
+| `Breed two cows using wheat.` | `7.62939453125e-06` |
+| `밀을 사용해서 소 두 마리를 번식시킨다.` | `3.814697265625e-06` |
+
+전체 최대 차이 `7.62939453125e-06`은 사전에 제안한 절대 허용값 `1e-6`을 넘었다. 그러나 이 값은 동일 구현의 반복 안정성을 확인하기 위한 임시 기준이었고 서로 다른 Chroma 구현의 동등성 기준으로 삼을 근거는 확인되지 않았다. Encoder byte checksum과 모든 후보 순서가 같고 각 modern index의 fresh/reload score는 정확히 같으므로, 이 차이는 stochastic한 변화가 아닌 dependency 내부 L2 수치 구현 차이로 기록한다.
+
+현대화 자체의 성능 비교가 연구 목적이 아니므로 별도의 절대 허용값을 사후 설정하지 않는다. 논문 기능에 직접 대응하는 embedding checksum, top-k 후보 순서와 recall 보존, 동일 modern profile의 fresh/reload score 동일성, clean install과 warning 제거를 병합 기준으로 삼아 modern profile을 승인했다. 관찰된 raw score 차이는 숨기지 않고 진단값으로만 보존한다.
+
+### 7. 근거와 공식 참고자료
+
+- [Migration 실행 로그](../log/retrieval_wrapper_migration_2026-08-27.json)
+- [Modern retrieval lock](../../Odyssey/requirements-retrieval-modern.lock.txt)
+- [공통 wrapper profile factory](../../Odyssey/odyssey/retrieval_embedding.py)
+- [Retrieval comparison fixture](../../Odyssey/scripts/semantic_retrieval_fixture.py)
+- [LangChain HuggingFace encode contract](https://reference.langchain.com/python/langchain-huggingface/embeddings/huggingface/HuggingFaceEmbeddings/encode_kwargs)
+- [LangChain Chroma API](https://reference.langchain.com/python/langchain-chroma/vectorstores/Chroma)
+- [Chroma persistence migration](https://docs.trychroma.com/docs/overview/migration)

@@ -10,7 +10,7 @@
 - **논문이 요구하는 것:** 자연어 목표를 계획하고 관련 skill을 검색·선택·실행한 뒤 관측 결과로 성공을 판단한다.
 - **현재 확인한 것:** 주요 기능의 코드 위치와 dependency 역할, Odyssey 추가 primitive 22개와 compositional skill 183개의 대응을 확인했다.
 - **연구자가 결정한 것:** 연산 부담을 고려해 top-5를 기본 retrieval profile로 고정하고 top-10은 별도 profile로 분리한다. 논문에 정확한 checkpoint가 명시되지 않았으므로 공개 코드 설정의 encoder를 modernized 기준으로 사용한다.
-- **구현에서 정비할 것:** exact candidate 검증, optional dependency 격리와 clean-install lock을 만든다. corpus/index 재로드 회귀는 완료했다.
+- **구현에서 정비할 것:** exact candidate 검증과 optional dependency 격리를 진행한다. retrieval modern profile의 clean-install lock과 corpus/index 재로드 회귀는 완료했다.
 - **실행 시점:** 위 조건을 먼저 고정한 뒤 MineMA와 Minecraft server를 연결한다. legacy runtime 비교 실행은 요구하지 않는다.
 
 이 문서의 항목은 다음 네 종류로 읽는다.
@@ -85,13 +85,15 @@ goal + constraints + environment observation
 ```text
 skill/skills.json                         sha256 0be22fdc338d4db199c75d60ad6455ec67e9b1240bda56834014d886e0c87802
 conf/config.json                          sha256 504cea1fc2489aff6e38f9c1000aabbc704bfe8c3ed5224778a9e9bf4d7113f5
-requirements.txt                          sha256 4afa65234cd0419f5e2b31b9c8b14c442c69fab535458eacdcf190ef37f2ecca
+requirements.txt                          sha256 45f8947cf4bb08525d94d1ceb1504d105c579d15afdcd05b45f839f5bf818ecc
 mineflayer/package-lock.json              sha256 5555e896e0c5d19c635965bc9338b0cd60a248092bc9c8ff65a6c678943a6b7c
 manifest/odyssey_primitive_40.json         sha256 e9dec40c7ff6ca7cb8b3a7f6d7ba4fc210890f75d47226e85ffc8d57361cdecb
 manifest/odyssey_skill_corpus.sha256       sha256 31a4c1e3f7672a7a422628ddb9701b485286b25bb3edd67e403aeb9eaab73861
-manifest/odyssey_semantic_encoder.json     sha256 490f83ed1dc61bbee9645d2985a9ee369e2b73d9b648f59f3aabf3cd94642c6e
+manifest/odyssey_semantic_encoder.json     sha256 c393693544bee8b799e8f1e576174cc3b2f9a1c3fb0ac83535748fec00677b1c
 log/semantic_retrieval_smoke_2026-08-27.json sha256 b39d4838001a9da4bb1bda8a5fdc7b0a1921496cb66d767669296234e87704a5
 log/semantic_retrieval_profiles_2026-08-27.json sha256 ee6e732eb797d6f09c211978d5b4a3df158ce6b30b83dd2cf3272d8bf5585e6f
+log/retrieval_wrapper_migration_2026-08-27.json sha256 64559023994c0344e8425de93600679c4a33574513f9cdf1d893656b770465bb
+Odyssey/requirements-retrieval-modern.lock.txt sha256 3fd810577c7f2bb40116bca05fa2b4f2a0bc481c7c0f713b046fbc94a463dbb2
 ```
 
 `odyssey_skill_corpus.sha256`에는 compositional code 183개, 대응 description 183개와 실제 runtime bundle인 `skills.json` 1개가 들어 있다. 저장소 루트에서 `sha256sum --check --quiet research/manifest/odyssey_skill_corpus.sha256`로 367개 항목을 한 번에 확인한다.
@@ -186,8 +188,9 @@ HTTP timeout, non-2xx, disconnected bot, JavaScript evaluation error와 critic v
 
 | Dependency | 코드상 역할 | 1차 분류 |
 |---|---|---|
-| `langchain`, `langchain_community` | message type, embedding adapter, Chroma wrapper | retrieval/planner에 필요. deprecated import migration 필요 |
-| `chromadb==0.3.29` | skill/QA vector persistence와 search | 논문 기능의 backend. 지원 버전과 persist migration 검증 필요 |
+| `langchain`, `langchain_community` | legacy message type, embedding adapter, Chroma wrapper | 기준 tag에서 보존. modern profile은 `langchain-core` message와 공식 partner wrapper로 분리 |
+| `langchain-huggingface`, `langchain-chroma` | modern embedding·Chroma adapter | clean-install과 기능 회귀를 통과한 기본 retrieval profile |
+| legacy `chromadb==0.3.29` / modern `1.3.5` | skill/QA vector persistence와 search | 새 index 생성·reload 통과. 구 index migration 대신 고정 corpus에서 재생성 |
 | `sentence-transformers` | description/query encoder | 논문 핵심 기능. checkpoint 고정 필요 |
 | `javascript` | Python에서 Babel module 호출 | actor/raw-skill parser 경로. 대체 또는 격리 전 기능 회귀 필요 |
 | `requests` | Mineflayer와 MineMA HTTP client | controller core 필수 |
@@ -201,7 +204,7 @@ HTTP timeout, non-2xx, disconnected bot, JavaScript evaluation error와 critic v
 | `flufl.lock` | `file_utils.py` 특정 함수 내부 import | requirements에 없음. 해당 기능 optional화 또는 extra 선언 필요 |
 | `@babel/core`, `@babel/generator` | actor와 raw-skill code parse/generation | Python 경로에서 require하지만 Node manifest에 없음. 누락 dependency |
 
-현재 설치 환경의 `pip check`는 성공했지만, requirements 대부분이 unpinned이고 실제 환경에는 LangChain 0.2 계열, Chroma 0.3.29, Sentence Transformers 5.6.0, Transformers 5.14.1 등이 섞여 있다. import smoke도 성공했으나 LangChain deprecation warning과 Python `javascript` package의 stream-fd warning이 발생했다. 따라서 현재 환경 성공만으로 clean-install 재현성을 주장할 수 없다.
+기존 설치 환경의 `pip check`는 성공했지만 LangChain 0.2 계열, Chroma 0.3.29와 맞지 않는 PostHog 7.27.0 때문에 deprecated/telemetry warning이 발생했다. Modern profile은 Python 3.10 빈 환경 두 개에서 exact lock 설치와 `pip check`, encoder·index 생성·reload·검색을 통과했고 경고도 제거됐다. Legacy 대비 L2 score 최대 차이 `7.62939453125e-06`은 stochastic하지 않지만 후보 순서와 recall에 영향을 주지 않아 dependency 내부 수치 구현 차이로 기록했다.
 
 ## 8. 논문–코드 차이와 미해결 항목
 
@@ -217,11 +220,12 @@ HTTP timeout, non-2xx, disconnected bot, JavaScript evaluation error와 critic v
 1. **Primitive 40개 runtime 검증:** 40개 working manifest는 작성했다. Odyssey 추가 22개의 source상 contract 위험을 먼저 수정하고, Voyager 상속 18개를 포함한 interface별 실행 fixture를 통과해야 runtime manifest로 승격할 수 있다.
 2. **Encoder 고정 `[x]`:** 공개 코드 encoder의 revision·checksum과 전처리·normalization을 manifest에 고정하고 CPU runtime fixture를 통과했다.
 3. **Retrieval profile 회귀 `[x]`:** L2 기반 기본 top-5와 별도 top-10 모두 known-query recall `4/4`로 통과했고, fresh index와 별도 프로세스 reload의 후보 순서와 score가 일치했다.
-4. **Dynamic skill lifecycle:** `Odyssey.learn`의 `add_new_skill` 호출은 주석 처리돼 있고 `generate_skill_description`은 초기화되지 않은 `self.llm`을 참조한다. 고정-library Odyssey baseline과 Voyager/Full profile을 분리한다.
-5. **Actor validation:** substring match 뒤 실패 시 첫 skill을 선택하는 현재 동작은 논문의 exact program 선택 contract와 맞지 않는다.
-6. **Critic 범위:** 일반 LLM critic 외에 crafting table/pickaxe/diamond만 처리하는 hard-coded subgoal verifier가 있다.
-7. **Eager coupling:** `Odyssey` 생성만으로 environment, planner QA vector DB, retrieval DB, launcher/provider import가 함께 초기화된다.
-8. **CWD 의존:** skill primitive와 sibling comprehensive library 경로가 `os.getcwd()`에 의존한다.
+4. **Retrieval wrapper migration `[x]`:** 공식 partner wrapper와 최종 lock은 두 clean 환경에서 통과했고 deprecated/telemetry warning도 제거됐다. Legacy–modern 후보 순서와 recall을 보존해 modernized 기본 profile로 승인했다.
+5. **Dynamic skill lifecycle:** `Odyssey.learn`의 `add_new_skill` 호출은 주석 처리돼 있고 `generate_skill_description`은 초기화되지 않은 `self.llm`을 참조한다. 고정-library Odyssey baseline과 Voyager/Full profile을 분리한다.
+6. **Actor validation:** substring match 뒤 실패 시 첫 skill을 선택하는 현재 동작은 논문의 exact program 선택 contract와 맞지 않는다.
+7. **Critic 범위:** 일반 LLM critic 외에 crafting table/pickaxe/diamond만 처리하는 hard-coded subgoal verifier가 있다.
+8. **Eager coupling:** `Odyssey` 생성만으로 environment, planner QA vector DB, retrieval DB, launcher/provider import가 함께 초기화된다.
+9. **CWD 의존:** skill primitive와 sibling comprehensive library 경로가 `os.getcwd()`에 의존한다.
 
 README의 Mineflayer 버전과 mod bundle 설명은 이번 감사에서 현재 lock 및 mod-free E0 증거에 맞춰 수정했다. Python `VoyagerEnv` 내부의 `/pause` 호출 자체는 end-to-end 연결 전에 optional adapter로 격리해야 한다.
 
@@ -240,7 +244,7 @@ README의 Mineflayer 버전과 mod bundle 설명은 이번 감사에서 현재 l
 2. **Skill library 동일성 보장 `[x]`:** 183개 compositional skill과 자연어 description, 동기화된 runtime `skills.json`의 파일별 checksum을 기록하고 검증했다.
 3. **Semantic encoder 고정 `[x]`:** 공개 코드 checkpoint의 revision·checksum과 전처리를 고정하고 실제 384차원 출력과 반복 오차 `0.0`을 확인했다.
 4. **후보 검색 재현 `[x]`:** 183개 corpus와 네 known query에서 기본 top-5·별도 top-10을 통과했고, index를 별도 프로세스에서 다시 열어도 후보 순서와 score가 유지됐다.
-5. **새 환경 설치 재현:** 기능별 dependency를 분리한 lock으로 빈 환경에서 설치·import·index load가 가능한지 확인한다.
+5. **새 환경 설치 재현 `[~]`:** retrieval modern profile은 빈 환경 두 개에서 exact lock 설치·import·index reload를 통과하고 최종 승인됐다. 나머지 profile lock은 미완료다.
 
 ### Server 통합 검증 — 위 조건 이후
 

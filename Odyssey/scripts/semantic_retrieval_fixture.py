@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 
@@ -42,6 +43,16 @@ KNOWN_QUERIES = [
 
 def read_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def package_versions(names: list[str]) -> dict[str, str | None]:
+    observed = {}
+    for name in names:
+        try:
+            observed[name] = version(name)
+        except PackageNotFoundError:
+            observed[name] = None
+    return observed
 
 
 def load_embedding_module():
@@ -108,26 +119,19 @@ def worker(args) -> int:
     profile_sizes = dict(embedding_module.SKILL_RETRIEVAL_PROFILES)
     model_dir = REPO_ROOT / manifest["checkpoint"]["local_path"]
     embeddings = embedding_module.build_retrieval_embeddings(
-        str(model_dir), device=args.device, local_files_only=True
+        str(model_dir),
+        device=args.device,
+        local_files_only=True,
+        wrapper_profile=args.wrapper_profile,
     )
-
-    import chromadb
-    from chromadb.config import Settings
-    from langchain_community.vectorstores import Chroma
-
-    settings = Settings(
-        chroma_db_impl="duckdb+parquet",
-        persist_directory=str(args.persist_directory),
-        anonymized_telemetry=False,
-    )
-    vector_store = Chroma(
+    vector_store = embedding_module.build_retrieval_vector_store(
         collection_name=COLLECTION_NAME,
         embedding_function=embeddings,
         persist_directory=str(args.persist_directory),
-        client_settings=settings,
         collection_metadata={
             "hnsw:space": embedding_module.RETRIEVAL_DISTANCE_METRIC
         },
+        wrapper_profile=args.wrapper_profile,
     )
 
     if args.worker == "build":
@@ -137,13 +141,26 @@ def worker(args) -> int:
             ids=names,
             metadatas=[{"name": name} for name in names],
         )
-        if chromadb.__version__.startswith("0.3."):
-            vector_store._client.persist()
+        embedding_module.persist_retrieval_vector_store(
+            vector_store, wrapper_profile=args.wrapper_profile
+        )
 
     count = vector_store._collection.count()
+    client_settings = (
+        vector_store._client.get_settings()
+        if hasattr(vector_store._client, "get_settings")
+        else None
+    )
     result = {
         "phase": args.worker,
+        "wrapper_profile": embedding_module.resolve_wrapper_profile(
+            args.wrapper_profile
+        ),
         "index_count": count,
+        "telemetry_disabled": getattr(
+            client_settings, "anonymized_telemetry", None
+        )
+        is False,
         "profiles": query_profiles(vector_store, profile_sizes),
     }
     print(json.dumps(result, ensure_ascii=False))
@@ -164,6 +181,8 @@ def run_worker(args, phase: str, persist_directory: Path) -> tuple[dict, list[st
         str(persist_directory),
         "--device",
         args.device,
+        "--wrapper-profile",
+        args.wrapper_profile,
     ]
     completed = subprocess.run(
         command,
@@ -223,12 +242,69 @@ def compare_profiles(build: dict, reload: dict, tolerance: float) -> dict:
     return comparisons
 
 
+def compare_baseline_evidence(
+    build: dict, baseline: dict, tolerance: float
+) -> dict:
+    baseline_queries = {
+        item["query"]: item for item in baseline["fresh_index_results"]
+    }
+    query_checks = []
+    for modern_query in build["profiles"]["top10"]["queries"]:
+        legacy_candidates = baseline_queries[modern_query["query"]][
+            "top10_candidates"
+        ]
+        modern_candidates = modern_query["candidates"]
+        legacy_names = [item["skill"] for item in legacy_candidates]
+        modern_names = [item["skill"] for item in modern_candidates]
+        score_deltas = [
+            abs(legacy["score"] - modern["score"])
+            for legacy, modern in zip(
+                legacy_candidates, modern_candidates, strict=True
+            )
+        ]
+        maximum_score_delta = max(score_deltas, default=0.0)
+        query_checks.append(
+            {
+                "query": modern_query["query"],
+                "candidate_order_equal": legacy_names == modern_names,
+                "maximum_score_delta": maximum_score_delta,
+                "scores_equal_within_tolerance": maximum_score_delta
+                <= tolerance,
+            }
+        )
+    return {
+        "score_tolerance": tolerance,
+        "score_comparison_role": "diagnostic_only_across_wrapper_versions",
+        "queries": query_checks,
+        "candidate_order_equal_for_all": all(
+            item["candidate_order_equal"] for item in query_checks
+        ),
+        "maximum_score_delta": max(
+            (item["maximum_score_delta"] for item in query_checks),
+            default=0.0,
+        ),
+        "scores_equal_within_tolerance_for_all": all(
+            item["scores_equal_within_tolerance"] for item in query_checks
+        ),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--skills", type=Path, default=DEFAULT_SKILLS)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--score-tolerance", type=float, default=0.000001)
+    parser.add_argument("--baseline-evidence", type=Path)
+    parser.add_argument(
+        "--baseline-score-tolerance", type=float, default=0.000001
+    )
+    parser.add_argument("--summary-only", action="store_true")
+    parser.add_argument(
+        "--wrapper-profile",
+        choices=["legacy-community", "modern-partner"],
+        default="modern-partner",
+    )
     parser.add_argument("--worker", choices=["build", "reload"])
     parser.add_argument("--persist-directory", type=Path)
     args = parser.parse_args()
@@ -257,6 +333,13 @@ def main() -> int:
     comparisons = compare_profiles(
         build, reload, args.score_tolerance
     )
+    baseline_comparison = None
+    if args.baseline_evidence is not None:
+        baseline_comparison = compare_baseline_evidence(
+            build,
+            read_json(args.baseline_evidence.resolve()),
+            args.baseline_score_tolerance,
+        )
     prefix_checks = []
     for phase in (build, reload):
         for top5_query, top10_query in zip(
@@ -296,6 +379,21 @@ def main() -> int:
             for phase in (build, reload)
             for profile in phase["profiles"].values()
         )
+        and (
+            args.wrapper_profile != "modern-partner"
+            or (
+                build["telemetry_disabled"]
+                and reload["telemetry_disabled"]
+                and not any(
+                    "telemetry" in warning.lower()
+                    for warning in build_warnings + reload_warnings
+                )
+            )
+        )
+        and (
+            baseline_comparison is None
+            or baseline_comparison["candidate_order_equal_for_all"]
+        )
     )
     output = {
         "profile": "odyssey-semantic-retrieval-persist-reload",
@@ -304,16 +402,65 @@ def main() -> int:
         "corpus_count": 183,
         "distance_metric": embedding_module.RETRIEVAL_DISTANCE_METRIC,
         "canonical_device": args.device,
+        "wrapper_profile": args.wrapper_profile,
+        "package_versions": package_versions(
+            [
+                "langchain-core",
+                "langchain-community",
+                "langchain-huggingface",
+                "langchain-chroma",
+                "chromadb",
+                "sentence-transformers",
+                "transformers",
+                "torch",
+                "posthog",
+            ]
+        ),
         "score_tolerance": args.score_tolerance,
         "profile_contract": profile_contract,
         "build": build,
         "reload": reload,
         "reload_comparisons": comparisons,
+        "legacy_wrapper_baseline_comparison": baseline_comparison,
         "profile_prefix_checks": prefix_checks,
         "warnings": sorted(set(build_warnings + reload_warnings)),
+        "telemetry_warning_free": not any(
+            "telemetry" in warning.lower()
+            for warning in build_warnings + reload_warnings
+        ),
         "passed": passed,
     }
-    print(json.dumps(output, ensure_ascii=False, indent=2))
+    printable_output = output
+    if args.summary_only:
+        printable_output = {
+            "profile": output["profile"],
+            "encoder_revision": output["encoder_revision"],
+            "wrapper_profile": output["wrapper_profile"],
+            "package_versions": output["package_versions"],
+            "corpus_count": output["corpus_count"],
+            "distance_metric": output["distance_metric"],
+            "profile_contract": output["profile_contract"],
+            "build_recall": {
+                name: profile["known_query_recall_at_k"]
+                for name, profile in build["profiles"].items()
+            },
+            "reload_recall": {
+                name: profile["known_query_recall_at_k"]
+                for name, profile in reload["profiles"].items()
+            },
+            "reload_comparisons": output["reload_comparisons"],
+            "legacy_wrapper_baseline_comparison": output[
+                "legacy_wrapper_baseline_comparison"
+            ],
+            "warnings": output["warnings"],
+            "telemetry_warning_free": output["telemetry_warning_free"],
+            "telemetry_disabled": {
+                "build": build["telemetry_disabled"],
+                "reload": reload["telemetry_disabled"],
+            },
+            "passed": output["passed"],
+        }
+    print(json.dumps(printable_output, ensure_ascii=False, indent=2))
     print(
         f"{'PASS' if passed else 'FAIL'}: "
         "Odyssey semantic retrieval profiles and reload fixture"

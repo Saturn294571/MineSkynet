@@ -452,6 +452,47 @@ Odyssey/.venv/bin/python Odyssey/scripts/semantic_retrieval_fixture.py
 
 2026-08-27 CPU 실행에서 두 profile 모두 네 query의 기대 skill을 포함해 recall@5·recall@10 `4/4`를 기록했다. fresh index와 reload의 모든 후보 순서가 같았고 최대 score 차이는 `0.0`이었다. top-10 전체 후보와 score, reload 비교 결과는 [profile 실행 로그](log/semantic_retrieval_profiles_2026-08-27.json)에 고정했다.
 
+### 3.9 Modern retrieval wrapper profile
+
+기존 검증 환경을 변경하지 않고 `langchain-huggingface`·`langchain-chroma` 조합을 확인하려면 비어 있는 Python 3.10 환경을 사용한다. 아래 경로가 이미 존재한다면 덮어쓰지 말고 다른 빈 임시 경로를 선택한다.
+
+```bash
+cd ~/Documents/MineSkynet
+Odyssey/.venv/bin/python -m venv /tmp/odyssey-retrieval-modern
+/tmp/odyssey-retrieval-modern/bin/python -m pip install --upgrade pip
+/tmp/odyssey-retrieval-modern/bin/python -m pip install \
+  --index-url https://download.pytorch.org/whl/cpu \
+  torch==2.13.0
+/tmp/odyssey-retrieval-modern/bin/python -m pip install \
+  -r Odyssey/requirements-retrieval-modern.lock.txt
+/tmp/odyssey-retrieval-modern/bin/python -m pip check
+```
+
+이 lock은 서로 다른 두 빈 환경에서 재설치한 최종 retrieval lock이다. 설치 뒤 다음 명령으로 encoder와 신규 wrapper 자체의 index 생성·reload·검색 contract를 확인한다.
+
+```bash
+/tmp/odyssey-retrieval-modern/bin/python \
+  Odyssey/scripts/semantic_encoder_fixture.py \
+  --run-model --device cpu --wrapper-profile modern-partner
+/tmp/odyssey-retrieval-modern/bin/python \
+  Odyssey/scripts/semantic_retrieval_fixture.py \
+  --wrapper-profile modern-partner --summary-only
+```
+
+2026-08-27에는 서로 다른 빈 환경 두 개에서 설치와 `pip check`를 통과했고, encoder checksum과 top-5·top-10 fresh/reload fixture도 통과했다. deprecated wrapper와 telemetry 경고는 출력되지 않았다. 결과는 [migration 실행 로그](log/retrieval_wrapper_migration_2026-08-27.json)에 기록했다.
+
+다음 비교 명령은 과거 wrapper의 후보·score와 직접 대조한다.
+
+```bash
+/tmp/odyssey-retrieval-modern/bin/python \
+  Odyssey/scripts/semantic_retrieval_fixture.py \
+  --wrapper-profile modern-partner \
+  --baseline-evidence research/log/semantic_retrieval_profiles_2026-08-27.json \
+  --summary-only
+```
+
+후보 순서는 전부 같고 비교 명령은 통과한다. Legacy 대비 L2 score 최대 차이 `7.62939453125e-06`은 stochastic하지 않지만 후보 순서와 recall에 영향을 주지 않는 dependency 내부 수치 구현 차이로 기록한다. Wrapper 간 raw score의 임시 절대 허용값은 병합 기준으로 사용하지 않으며, 동일 modern profile의 fresh/reload score 동일성과 실제 top-k 결과를 회귀 기준으로 사용한다.
+
 ## 알려진 주의사항
 
 - 서버의 offline/insecure mode 경고는 로컬 Mineflayer 연구 환경에서는 예상된 메시지다.

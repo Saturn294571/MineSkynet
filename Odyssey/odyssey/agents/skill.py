@@ -1,8 +1,7 @@
 import os
 
 import odyssey.utils as U
-from langchain.schema import HumanMessage, SystemMessage
-from langchain.vectorstores import Chroma
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from odyssey.prompts import load_prompt
 from odyssey.control_primitives import load_control_primitives
@@ -11,6 +10,8 @@ from odyssey.retrieval_embedding import (
     RETRIEVAL_DISTANCE_METRIC,
     SKILL_RETRIEVAL_PROFILES,
     build_retrieval_embeddings,
+    build_retrieval_vector_store,
+    persist_retrieval_vector_store,
 )
 from odyssey.utils.logger import get_logger
 
@@ -44,9 +45,10 @@ class SkillManager:
             self.skills = {}
         self.retrieval_top_k = retrieval_top_k
         self.ckpt_dir = ckpt_dir
-        self.vectordb = Chroma(
+        embeddings = build_retrieval_embeddings(embedding_model)
+        self.vectordb = build_retrieval_vector_store(
             collection_name="skill_vectordb",
-            embedding_function=build_retrieval_embeddings(embedding_model),
+            embedding_function=embeddings,
             persist_directory=f"{ckpt_dir}/skill/vectordb",
             collection_metadata={"hnsw:space": RETRIEVAL_DISTANCE_METRIC},
         )
@@ -58,7 +60,7 @@ class SkillManager:
                     metadatas=[{"name": key}],
                 )
             
-            self.vectordb.persist()
+            persist_retrieval_vector_store(self.vectordb)
         
         assert self.vectordb._collection.count() == len(self.skills), (
             f"Skill Manager's vectordb is not synced with skills.json.\n"
