@@ -51,13 +51,15 @@ Voyager의 automatic curriculum, code generation/repair, self-verification과 dy
 - [x] 183개 description을 indexing한 top-5 smoke에서 영어 3개·한국어 1개 query의 기대 skill이 모두 rank 1로 반환됐다.
 - [x] top-5 기본·top-10 별도 profile을 구현하고, fresh index와 별도 프로세스 reload에서 네 query의 후보 순서와 score가 모두 유지됨을 확인했다.
 - [x] 신규 LangChain partner wrapper를 두 clean 환경에서 검증하고 최종 retrieval lock과 기본 profile로 승인했다. Legacy와의 미세한 L2 score 차이는 후보 순서와 recall에 영향을 주지 않는 내부 수치 차이로 기록했다.
+- [x] Primitive 선행 정책 중 `Vec3`, air/water 배치, 공개 armor 재료 순서, 단일 drop 책임과 seed 42를 contract fixture로 고정했다.
+- [x] 실행 bot을 non-OP로 격리하고 world 준비를 host RCON harness로 분리했다. 실제 server에서 non-OP, host RCON 성공, agent `/gamemode` 거부와 survival 유지까지 확인했다.
 
 코드 감사·수정·offline 자동 검증과 결과 문서화는 구현 작업으로 진행한다. Minecraft server·bridge 기동, world/entity 준비와 장시간 관찰은 연구자가 수행하며, 실행 전 정확한 명령과 확인할 결과를 제공한다.
 
 ### 이어서 수행할 순서
 
-1. `feedAnimals`·`cookFood`를 수정하고 farming/cooking fixture를 실행한다.
-2. 연구자가 combat 성공 기준과 `/gamemode` 허용 범위를 결정한 뒤 `killMonsters`를 수정·검증한다.
+1. 선행 정책 6항목의 offline 검증을 기준선으로 삼아, 감사에서 판정한 나머지 명백 오류를 기능군별로 수정·검증한다.
+2. 나머지 primitive 문제를 모두 처리한 뒤 `plantSeeds`·`feedAnimals`의 Pathfinder goal을 online fixture에서 마지막으로 판단한다.
 
 오늘은 MineMA actor, planner–actor–critic end-to-end, 능동 skill 생성과 legacy 성능 비교로 범위를 확장하지 않는다. 진행 중 결과는 component 성공을 전체 완료로 올리지 않고 이 절의 checklist와 아래 세부 상태에 함께 반영한다.
 
@@ -95,7 +97,7 @@ actor가 선택한 JavaScript skill이 실제 Minecraft 상태를 바꾸고, 오
 
 자연어 subgoal과 의미가 가까운 기존 skill을 논문 조건에 따라 반복해서 후보로 제공할 수 있는지 확인한다.
 
-- **[~] primitive 40개의 provenance·API working manifest와 함수 syntax 확인; `goto`·`getAnimal` offline fixture 14/14 및 두 Minecraft online fixture 통과, 나머지 primitive contract 검증은 미완료**
+- **[~] primitive 40개의 provenance·API working manifest와 함수 syntax 확인; `goto`·`getAnimal` offline 14/14 및 online 통과, 선행 정책 fixture 6/6 통과, 나머지 명백 오류와 최종 Pathfinder goal 검증은 미완료**
 - [x] compositional code 183개와 대응 description 183개의 파일별 SHA-256 기록
 - [x] `skills.json` 183 key를 code·description 원본과 동기화하고 runtime bundle checksum 기록
 - [x] code가 없는 `killOnePlayer.txt`를 기본 corpus에서 제외하고 orphan으로 기록

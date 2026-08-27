@@ -157,47 +157,45 @@
 
 # 8.27 랩미팅
 1) 이번주 목표
-    다음 랩미팅까지의 단기 목표는 “Skill library를 정적으로 정리한 상태에서 실제 재현 가능한 retrieval 입력 계층으로 올리는 것”입니다.
-
-    우선순위는 다음이 적절합니다.
+    - Skill library를 정적으로 정리한 상태에서 실제 재현 가능한 retrieval 입력 계층으로 올리는 것
 
     1. Primitive runtime 결함 정리
-
-    - `goto`, `getAnimal`의 명백한 구현 오류 수정
-    - `feedAnimals`, `cookFood`, `killMonsters`의 contract 위험 확인
-    - primitive를 조회·장착·이동·상호작용 등으로 나눠 대표 fixture 작성
-    - 서버가 필요한 fixture는 실행 명령과 성공 조건을 준비한 뒤 직접 실행
-
-    목표는 40개를 모두 완벽하게 실증하는 것이 아니라, compositional skill이 의존하는 primitive가 조용히 실패하지 않는 상태를 만드는 것입니다.
+        - `goto`, `getAnimal`의 명백한 구현 오류 수정
+        - `feedAnimals`, `cookFood`, `killMonsters`의 contract 위험 확인
+        - primitive를 조회·장착·이동·상호작용 등으로 나눠 대표 fixture(고정본) 작성
+        - 서버가 필요한 fixture는 실행 명령과 성공 조건을 준비한 뒤 직접 실행
 
     2. Semantic encoder 조건 고정
-
-    - 공개 코드의 `paraphrase-multilingual-MiniLM-L12-v2` 정확한 revision/checksum 기록
-    - max length, pooling, normalization 설정 기록
-    - 같은 corpus를 다시 embedding할 수 있는 manifest 작성
-
-    여기까지는 모델 성능 평가가 아니라 “같은 입력을 다시 만들 수 있는가”를 확인하는 작업입니다.
+        - 공개 코드의 `paraphrase-multilingual-MiniLM-L12-v2` 정확한 revision/checksum 기록
+        - max length, pooling, normalization 설정 기록
+        - 같은 corpus(말뭉치)를 다시 embedding할 수 있는 manifest(확정본) 작성
+            - 같은 입력을 다시 만들 수 있는가?
+        - Chroma·LangChain deprecated API 경고 정리
+        - retrieval profile의 dependency version/lock 작성
 
     3. Retrieval fixture 완성
+        - top-5를 기본 profile로 구현(의도는 저사양 노드에서 불필요한 연산을 줄이고 추가적인 계산이 유의미하진 않다고 판단)
+            - top-10을 별도 profile로 분리
+        - 대표 자연어 subgoal 몇 개에 대한 후보와 score 저장
+        - index 재생성·재로드 후 후보 순서가 유지되는지 확인
+            - 구형/원본 인덱스 사용시 잠재적 문제가 있고 어차피 인코더로서 재현 가능하기 때문에 구형 index 제거
+        - 조건과 결과를 고정해 이후 actor 실험의 입력을 통제
+        - 빈 환경에서 install → index 생성 → reload → 검색 smoke test 
+            - 2. 에서 통과하긴 했지만 설치->임베딩->검색 까지 파이프라인 통과
 
-    - top-5를 기본 profile로 구현
-    - top-10을 별도 profile로 분리
-    - 대표 자연어 subgoal 몇 개에 대한 후보와 score 저장
-    - index 재생성·재로드 후 후보 순서가 유지되는지 확인
+    4. +@
+        - 작업을 하면서도 지속적으로 목표를 상기중. 현재 코드 자체의 디버깅/트러블슈팅 뿐만이 아니라 semantic transfomer의 조건 확정이나 clean install 또한 주관적인 입장이지만 파이프라인을 명시적이고 깔끔하게 한다는 측면에서 개인적으로는 타당하다고 생각
+        - 추가로 의미상/기능상으로 세부 목표를 묶어 한 보고 단위를 정하고 report_log.md 로 체계화
+        - 현대화 마일스톤 문서상으로도 
 
-    랩미팅에서는 retrieval 정확도가 좋다고 주장하기보다 “조건과 결과를 고정해 이후 actor 실험의 입력을 통제했다”고 설명하면 됩니다.
-
-    4. 가능하면 진행할 항목
-
-    - retrieval profile의 dependency version/lock 작성
-    - 빈 환경에서 install → index 생성 → reload → 검색 smoke test
-    - Chroma·LangChain deprecated API 경고 정리
-
-    이번 랩미팅 전에는 MineMA actor, planner–actor–critic end-to-end, 능동 skill 생성, legacy 성능 비교까지 확장하지 않는 편이 좋습니다.
-
-    발표 구조는 다음 네 문장으로 충분합니다.
-
-    - 실행 계층은 이미 반복 회귀를 통과했다.
-    - 지난주에는 primitive 40 mapping과 183개 skill corpus checksum을 고정했다.
-    - 감사 과정에서 primitive contract 결함과 `skills.json` 불일치를 발견했고 runtime corpus는 동기화했다.
-    - 다음 목표는 primitive runtime 안정화와 재현 가능한 top-5 retrieval baseline 완성이다.
+2) 다음 목표
+    - 논문–코드–dependency 대응 `[~]` : 미완료된 나머지 항목들 보수
+    - Actor와 model service `[ ]`
+    - Planner–actor–critic end-to-end `[ ]`
+    - 능동 skill lifecycle 보존 profile `[ ]`
+        - 대략 2-3주, 보수적으론 3-4주면 완전한 현대화 가능.
+    - in context RL이 전통적인 뉴럴넷/딥러닝에서의 온라인학습이나 보조 수단(RAG등) 외에도 실시간으로, 혹은 한 세션의 lifecycle 내에서 적응 가능한 시스템으로서 방법론이 가능한가? (넓게보면 보이저-오딧세이-마인스카이넷도 이 질문의 연장선이라고 넓은 관점에서 해석 가능할지도)
+        - 구체적으로는 챗봇등에서 과거 대화 내역 -> 감성분석 및 스코어링 -> 적응이 기존 트랜스포머 only보다 더 효율적으로 가능한가?
+            - 막연히 드는 생각이지만 어차피 트랜스포머 구조상 모든 입력을 읽고 다음 토큰을 예측하는 것 이기 때문에 의도적이진 않아도 사용자의 의도에 적응한다고는 생각
+        - RLHF등과는 별개로 구분
+        - 아직 구체화되고 엄밀한 질문은 아니고 추상적으로 러프하게 던지는 질문

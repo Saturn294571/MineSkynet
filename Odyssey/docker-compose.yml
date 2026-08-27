@@ -20,13 +20,14 @@ services:
       VIEW_DISTANCE: "1"
       SIMULATION_DISTANCE: "4"
       ENTITY_BROADCAST_RANGE_PERCENTAGE: "50"
-      # OPS=name resolves an online UUID even when ONLINE_MODE is false.
-      # Use the deterministic OfflinePlayer:bot UUID so a fresh world can run
-      # the E0 hard-reset commands on the bot's first connection.
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: "${ODYSSEY_RCON_PASSWORD:?Set ODYSSEY_RCON_PASSWORD for host-admin operations}"
+      # The execution bot is deliberately absent from this list. World reset,
+      # gamemode and summon operations run through the host-only RCON harness.
       OPS_FILE: "/config/mineskynet-ops.json"
       OVERRIDE_OPS: "TRUE"
     volumes:
       - ./runtime/minecraft/data:/data
       - ./runtime/minecraft/mods:/mods:ro
-      - ./server-profile/e0/ops.json:/config/mineskynet-ops.json:ro
+      - ./server-profile/modernized/ops.json:/config/mineskynet-ops.json:ro
     restart: unless-stopped

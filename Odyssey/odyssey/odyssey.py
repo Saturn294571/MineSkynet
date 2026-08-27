@@ -206,14 +206,10 @@ class Odyssey:
                     "username": self.username
                 }
             )
-        difficulty = (
-            "easy" if len(self.planner_agent.completed_tasks) > 15 else "peaceful"
-        )
         # step to peek an observation
-        events = self.env.step(
-            "bot.chat(`/time set ${getNextTime()}`);\n"
-            + f"bot.chat('/difficulty {difficulty}');\n"
-        )
+        # Time, difficulty and other world preparation belong to the
+        # server-host RCON harness. The non-OP execution bot only observes.
+        events = self.env.step("")
         with Timer('retrieve skills'):
             self.skills = self.skill_manager.retrieve_skills(query=self.context)
             self.logger.info(f"Render Action Agent system message with {len(self.skills[0])} skills")

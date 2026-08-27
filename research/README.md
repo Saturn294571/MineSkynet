@@ -235,17 +235,32 @@ Odyssey/runtime/minecraft/mods/
 └── completeconfig-2.3.1.jar
 ```
 
-이 JAR들은 저장소에서 재배포하지 않으므로 필요할 때 각 mod의 공식 배포처에서 정확한 Minecraft 1.19.4 호환 버전을 받아야 한다. `runtime/`은 Minecraft world와 다운로드된 JAR을 포함하므로 Git에 커밋하지 않는다. 현재 `bridge.py`의 일반 Odyssey 경로에는 `/pause` 호출이 남아 있으므로, end-to-end 연결 전 이를 optional adapter로 격리해야 한다.
+이 JAR들은 저장소에서 재배포하지 않으므로 필요할 때 각 mod의 공식 배포처에서 정확한 Minecraft 1.19.4 호환 버전을 받아야 한다. `runtime/`은 Minecraft world와 다운로드된 JAR을 포함하므로 Git에 커밋하지 않는다. `bridge.py`의 modernized 기본 경로는 pause adapter를 비활성화하며, `legacy_pause_adapter=True`를 명시한 과거 호환 profile에서만 `/pause`를 호출한다.
 
 ### 3.2 터미널 1: Minecraft 서버 실행
 
 ```bash
 cd ~/Documents/MineSkynet
 cd Odyssey
+cp .env.example .env
+# .env의 ODYSSEY_RCON_PASSWORD를 긴 임의 문자열로 교체한다.
 docker compose up -d
 docker compose ps
 docker compose logs -f mc
 ```
+
+modernized server의 `ops.json`은 비어 있어 실행 bot에 OP 권한을 주지 않는다. RCON port도 host에 publish하지 않으며, 비밀번호는 Git에서 제외된 `Odyssey/.env`를 통해 Minecraft container에만 전달한다. `gamemode`, `summon`, player 초기화와 같은 관리자 작업은 연구자·서버 호스트가 아래 RCON harness로 실행한다.
+
+```bash
+cd ~/Documents/MineSkynet
+python3 Odyssey/scripts/host_admin_rcon.py prepare-player \
+  --player bot --gamemode survival
+python3 Odyssey/scripts/host_admin_rcon.py summon-near-player \
+  --player bot --entity minecraft:cow
+python3 Odyssey/scripts/host_admin_rcon.py command "time set day"
+```
+
+`command` 하위 명령은 임의 server command를 실행할 수 있으므로 agent나 생성 코드에 노출하지 않고 서버 호스트만 사용한다. 실행 bot이 수행하는 skill code는 `/`로 시작하는 chat을 거부하며, 서버의 비-OP 설정이 최종 권한 경계다.
 
 성공하면 로그에 다음 형태가 나타난다.
 
@@ -388,6 +403,13 @@ PASS: mineWoodLog collected at least one wood log
 
 `goto`와 `getAnimal`의 실제 Minecraft 행동을 확인한다. 이 fixture에는 Minecraft server와 Mineflayer bridge만 필요하며 MineMA backend는 필요하지 않다. 먼저 3.2, 3.3, 3.5 절에 따라 server·bridge·bot을 준비한다.
 
+서버를 사용하기 전에 `Vec3`, air/water 배치, armor 순서, 단일 drop 책임, non-OP profile과 seed 42의 선행 정책을 offline에서 확인할 수 있다.
+
+```bash
+cd ~/Documents/MineSkynet
+node Odyssey/scripts/primitive_policy_offline.js
+```
+
 장애물이 없는 방향으로 6블록 이동하고 최종 위치가 목표 반경 2블록 안인지 확인한다.
 
 ```bash
@@ -398,20 +420,22 @@ python3 Odyssey/scripts/primitive_runtime_online.py goto --dx 6
 `getAnimal`은 fixture 준비 명령과 primitive 실행을 분리한다. 아래 예시는 기존 cow를 정리하고 bot 근처에 cow 한 마리와 wheat를 준비한 뒤, 현재 위치에서 x축으로 8블록 떨어진 목표까지 유인한다.
 
 ```bash
-cd ~/Documents/MineSkynet/Odyssey
-docker compose exec mc rcon-cli "execute at bot run kill @e[type=minecraft:cow,distance=..32]"
-docker compose exec mc rcon-cli "give bot minecraft:wheat 1"
-docker compose exec mc rcon-cli "execute at bot run summon minecraft:cow ~2 ~ ~"
-
 cd ~/Documents/MineSkynet
+python3 Odyssey/scripts/host_admin_rcon.py command \
+  "execute at bot run kill @e[type=minecraft:cow,distance=..32]"
+python3 Odyssey/scripts/host_admin_rcon.py command "give bot minecraft:wheat 1"
+python3 Odyssey/scripts/host_admin_rcon.py summon-near-player \
+  --player bot --entity minecraft:cow
+
 python3 Odyssey/scripts/primitive_runtime_online.py get-animal --type cow --dx 8
 ```
 
 통과 기준은 `GoalNear`와 동일하게 좌표를 내림한 block-grid에서 `goto`의 bot–target 거리가 2블록 이하이고, `getAnimal`은 같은 bot–target 조건과 cow–bot 실수 거리 4블록 이하를 만족하면서 `onError`가 없는 것이다. 따라서 block-grid 기준을 만족하면 bot 중심과 실수 target 사이의 출력 거리(`bot_distance_to_target`)는 2를 조금 넘을 수 있으며, 실제 판정값은 `bot_block_distance_to_target`이다. 지형 때문에 경로가 막히면 실패를 성공으로 바꾸지 말고, 열린 방향에 맞춰 `--dx`, `--dy`, `--dz`만 조정해 다시 실행한다. 실행이 끝나면 필요에 따라 다음 명령으로 cow를 정리한다.
 
 ```bash
-cd ~/Documents/MineSkynet/Odyssey
-docker compose exec mc rcon-cli "execute at bot run kill @e[type=minecraft:cow,distance=..32]"
+cd ~/Documents/MineSkynet
+python3 Odyssey/scripts/host_admin_rcon.py command \
+  "execute at bot run kill @e[type=minecraft:cow,distance=..32]"
 ```
 
 ### 3.8 Semantic encoder contract fixture

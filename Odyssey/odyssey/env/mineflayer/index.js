@@ -1,6 +1,8 @@
 const fs = require("fs");
 const express = require("express");
 const mineflayer = require("mineflayer");
+const { plugin: pvp } = require("mineflayer-pvp");
+const hawkEyeModule = require("minecrafthawkeye");
 const bridgePackage = require("./package.json");
 
 const skills = require("./lib/skillLoader");
@@ -25,6 +27,10 @@ app.use(express.urlencoded({ limit: "50mb", extended: false }));
 const STARTUP_CHUNK_TIMEOUT_MS = 10000;
 const STARTUP_PHYSICS_PROBE_MS = 500;
 const DEFAULT_MINECRAFT_VERSION = process.env.MC_VERSION || "1.19.4";
+const DEFAULT_EXPLORATION_SEED = 42;
+const LEGACY_BOT_ADMIN_COMMANDS =
+    process.env.ODYSSEY_ALLOW_LEGACY_BOT_ADMIN_COMMANDS === "true";
+const hawkEye = hawkEyeModule.default || hawkEyeModule;
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,6 +109,17 @@ function botSnapshot() {
             : null,
         position_finite: position ? isFiniteVector(position) : null,
         inventory: inventorySnapshot(),
+        exploration_seed: Number.isInteger(bot?.explorationSeed)
+            ? bot.explorationSeed
+            : null,
+        exploration_rng_state: Number.isInteger(bot?.explorationRngState)
+            ? bot.explorationRngState
+            : null,
+        operator_commands_enabled: LEGACY_BOT_ADMIN_COMMANDS,
+        combat_plugins: {
+            pvp: Boolean(bot?.pvp),
+            hawkeye: Boolean(bot?.hawkEye),
+        },
     };
 }
 
@@ -239,6 +256,36 @@ function installFiniteMotionGuard(bot) {
 }
 
 app.post("/start", (req, res) => {
+    const explorationSeed = req.body.seed ?? DEFAULT_EXPLORATION_SEED;
+    if (!Number.isInteger(explorationSeed)) {
+        res.status(400).json({
+            error: "seed must be an integer",
+        });
+        return;
+    }
+    const inventory = req.body.inventory;
+    const equipment = req.body.equipment;
+    const hasInventoryInjection =
+        inventory !== undefined &&
+        inventory !== null &&
+        (typeof inventory !== "object" || Object.keys(inventory).length > 0);
+    const hasEquipmentInjection = Array.isArray(equipment)
+        ? equipment.some(Boolean)
+        : equipment !== undefined && equipment !== null;
+    const requestsHostAdmin =
+        req.body.reset === "hard" ||
+        hasInventoryInjection ||
+        hasEquipmentInjection ||
+        Boolean(req.body.position) ||
+        Boolean(req.body.spread);
+    if (!LEGACY_BOT_ADMIN_COMMANDS && requestsHostAdmin) {
+        res.status(403).json({
+            error:
+                "World preparation is host-admin only in the modernized profile. " +
+                "Use the RCON host harness, then start the execution bot with reset=soft.",
+        });
+        return;
+    }
     if (pendingStartResponse && !pendingStartResponse.headersSent) {
         pendingStartResponse.status(409).json({
             error: "Start request superseded by a newer request",
@@ -271,6 +318,9 @@ app.post("/start", (req, res) => {
 
     // Event subscriptions
     bot.waitTicks = req.body.waitTicks;
+    bot.explorationSeed = explorationSeed >>> 0;
+    bot.explorationRngState = bot.explorationSeed;
+    bot.allowAdminCommands = LEGACY_BOT_ADMIN_COMMANDS;
     bot.globalTickCounter = 0;
     bot.stuckTickCounter = 0;
     bot.stuckPosList = [];
@@ -357,6 +407,8 @@ app.post("/start", (req, res) => {
             bot.loadPlugin(pathfinder);
             bot.loadPlugin(tool);
             bot.loadPlugin(collectBlock);
+            bot.loadPlugin(pvp);
+            bot.loadPlugin(hawkEye);
 
             // bot.collectBlock.movements.digCost = 0;
             // bot.collectBlock.movements.placeCost = 0;
@@ -402,8 +454,10 @@ app.post("/start", (req, res) => {
             if (pendingStartResponse === res) pendingStartResponse = null;
 
             initCounter(bot);
-            bot.chat("/gamerule keepInventory true");
-            bot.chat("/gamerule doDaylightCycle false");
+            if (LEGACY_BOT_ADMIN_COMMANDS) {
+                bot.chat("/gamerule keepInventory true");
+                bot.chat("/gamerule doDaylightCycle false");
+            }
         } catch (error) {
             onConnectionFailed(error);
         }
@@ -588,6 +642,14 @@ app.post("/step", async (req, res) => {
     }
 
     function teleportBot() {
+        if (!LEGACY_BOT_ADMIN_COMMANDS) {
+            bot.pathfinder.setGoal(null);
+            bot.chat(
+                "Pathfinder stopped after detecting a stuck position; " +
+                    "host-admin teleport is disabled."
+            );
+            return;
+        }
         const blocks = bot.findBlocks({
             matching: (block) => {
                 return block.type === 0;
@@ -607,6 +669,7 @@ app.post("/step", async (req, res) => {
     }
 
     function returnItems() {
+        if (!LEGACY_BOT_ADMIN_COMMANDS) return;
         bot.chat("/gamerule doTileDrops false");
         const crafting_table = bot.findBlock({
             matching: mcData.blocksByName.crafting_table.id,
@@ -721,6 +784,12 @@ app.post("/stop", (req, res) => {
 });
 
 app.post("/pause", (req, res) => {
+    if (!LEGACY_BOT_ADMIN_COMMANDS) {
+        res.status(403).json({
+            error: "Server pause is disabled in the modernized non-OP profile",
+        });
+        return;
+    }
     const bot = activeBot;
     if (!bot) {
         res.status(400).json({ error: "Bot not spawned" });

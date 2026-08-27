@@ -709,3 +709,158 @@ Legacy와 modern의 top-10 후보 순서는 네 query에서 모두 같았지만 
 - [LangChain HuggingFace encode contract](https://reference.langchain.com/python/langchain-huggingface/embeddings/huggingface/HuggingFaceEmbeddings/encode_kwargs)
 - [LangChain Chroma API](https://reference.langchain.com/python/langchain-chroma/vectorstores/Chroma)
 - [Chroma persistence migration](https://docs.trychroma.com/docs/overview/migration)
+
+---
+
+## 2026-08-27 — Primitive 40 runtime 전 코드 감사
+
+작성일: 2026-08-27
+대상 브랜치: `experiment/odyssey-modernized`
+범위: 실제 Minecraft fixture를 추가하기 전에 논문 contract, working manifest, JavaScript source와 modern bridge dependency를 대조
+
+### 1. 논문상 기능과 현재 증거
+
+Odyssey의 primitive 40개는 183개 compositional skill이 Minecraft 상태를 바꾸기 위해 사용하는 하위 interface다. 이번 감사는 40개를 모두 온라인으로 실행하는 것이 아니라, 실행 전에 정상 입력에서도 실패할 명백한 오류와 공개 코드의 설계 선택일 수 있어 연구자 의도 확인이 필요한 차이를 분리했다.
+
+- Odyssey 추가 primitive 22개와 Voyager 상속 custom primitive 8개 및 지원 함수는 모두 JavaScript syntax 검사를 통과했다.
+- Voyager에서 직접 사용하는 Mineflayer API 10개는 현재 Mineflayer 4.25.0과 pathfinder source에서 interface 존재를 확인했다.
+- `goto`와 `getAnimal`은 offline 14/14와 Minecraft online fixture를 통과했다.
+- 기존 E0의 원목·작업대 반복 fixture는 `mineBlock`, `craftItem`, `getPlanksCount`와 `exploreUntil`의 일부 실행 경로를 간접적으로 통과했다. 다만 `exploreUntil`의 실제 이동·timeout branch까지 모두 검증한 것은 아니다.
+
+### 2. 명백한 오류
+
+아래 항목은 연구 의도와 무관하게 현재 dependency에서 존재하지 않는 API를 호출하거나, 정상적인 실패 조건 뒤에도 실행을 계속하거나, 선언되지 않은 상태를 사용하는 결함이다. 수정 뒤 offline regression을 먼저 통과해야 한다.
+
+| Primitive·계층 | 코드상 오류 | 예상 결과 |
+|---|---|---|
+| `killMob`·combat bridge | `killMob`은 `bot.pvp`와 `bot.hawkEye`를 호출하지만 modern bridge는 두 plugin을 설치·load하지 않는다. Legacy에는 `mineflayer-pvp 1.3.2`, `minecrafthawkeye 1.3.6`이 있었다. | entity가 존재하는 실제 전투에서 undefined API 오류 |
+| `getItemFromChest` | 설치된 Mineflayer 4.25.0 container에는 없는 `chest.findContainerItem()`을 호출한다. 현재 API는 `containerItems()`, `withdraw()`, `deposit()` 경로다. | chest를 정상적으로 열어도 인출 단계에서 오류 |
+| `feedAnimals` | 종별 먹이를 조회하거나 hand에 장착하지 않고 `bot.useOn(animal)`을 호출한다. | 논문의 “appropriate food로 먹인다”는 contract를 수행하지 못함 |
+| `cookFood` | coal이 없다는 메시지를 낸 뒤 return하지 않고 furnace 배치와 `smeltItem`을 계속 호출한다. 완료 메시지도 실제 `count`와 무관하게 항상 1개라고 기록한다. | 실패를 성공처럼 이어가거나 잘못된 결과 보고 |
+| `killMonsters` | `isAlive`와 반복 변수 `i`를 선언하지 않고, target이 `null`이어도 `monster.position`을 참조하며, death listener를 제거하지 않는다. | 전역 상태 오염, null dereference와 반복 실행 listener 누적 |
+| `plantSeeds` | `findBlocks()`의 빈 배열을 `if (!farmland)`로 검사하고 seed 존재를 확인하지 않은 채 equip한다. | farmland·seed가 없는 failure path가 의도대로 종료되지 않음 |
+| `eatFood` | 지정 food가 inventory에 없는 경우를 확인하지 않고 `bot.equip(null, "hand")`을 호출한다. | 정상적인 missing-item 조건이 구조화되지 않은 runtime 오류가 됨 |
+| `findSuitablePosition` | 세 높이 층의 offset 목록에 `(-1, *, 1)`이 중복되고 대응하는 `(1, *, -1)`이 누락됐다. | 탐색 영역이 의도치 않게 비대칭이 됨 |
+
+`killAnimal`은 자체 syntax보다 `killMob`의 누락 combat plugin에 의해 함께 막힌다. `killMonsters` 또한 같은 blocker를 공유하므로 combat dependency를 복구하거나 별도 지원 profile로 고정하기 전에는 online 성공을 주장할 수 없다.
+
+### 3. 연구자 의도 확인 또는 fixture로 판별할 영역
+
+아래 항목은 위험이 보이지만 공개 코드가 의도적으로 택한 동작일 가능성을 배제할 수 없다. 임의 수정하지 않고 논문 contract와 기존 compositional caller를 함께 보존하는 방향을 정한 뒤 처리한다.
+
+| 항목 | 논문·구현 차이 | 판단할 내용 |
+|---|---|---|
+| spatial signature | 논문의 `checkBlockAbove`·`checkBlocksAround`은 `(x,y,z)`를 받지만 공개 코드와 기존 compositional skill은 `Vec3`를 전달한다. | 기존 `Vec3` caller를 유지하면서 좌표 signature도 받는 호환 interface로 만들지 결정 |
+| placement target | 논문의 `findSuitablePosition`은 대상 block이 `air`여야 하지만 구현과 기존 manifest는 `air` 또는 `water`를 허용한다. | 논문 contract대로 air만 허용할지, water 허용을 공개 코드 profile로 보존할지 결정 |
+| pathfinder goal | `plantSeeds`와 `feedAnimals`는 점유된 farmland·entity 좌표에 `GoalBlock`을 사용한다. | 실제 접근 실패인지 online fixture로 확인하고 `GoalNear`·`GoalLookAtBlock` 전환 여부 결정 |
+| armor 우선순위 | `equipArmor`는 diamond → iron → gold → chainmail → leather 순이다. “best”가 방어력, 재료 tier 또는 공개 코드 순서를 뜻하는지 명시되지 않았다. | 논문 재현에서는 공개 순서를 보존할지 게임 수치 순으로 정렬할지 결정 |
+| drop 회수 책임 | `killMob`이 drop을 수집한 뒤 `killAnimal`이 과거 entity 위치로 다시 이동하고 수집 완료를 출력한다. | primitive 간 책임 중복을 제거할지 공개 orchestration을 유지할지 결정 |
+| combat command | `killMonsters`가 `/gamemode survival`을 직접 호출한다. | 일반 primitive에서 OP command를 허용할지, controlled combat profile에만 둘지 결정 |
+| exploration randomness | `exploreUntil`은 `Math.random()`으로 10~29 block 이동량을 정한다. | production 탐색은 유지하되 fixture에서 RNG를 주입·고정할지 결정 |
+
+#### 쟁점 이해를 위한 설명과 예시
+
+`Vec3`는 Minecraft의 `(x,y,z)` 좌표를 하나의 3차원 vector 객체로 묶은 자료형이다. 예를 들어 `new Vec3(10, 64, -5)`는 `x=10`, `y=64`, `z=-5`를 가지며, `position.plus(new Vec3(0, 1, 0))`은 바로 위 좌표를, `position.distanceTo(other)`는 다른 위치까지의 거리를 계산한다. 논문의 `checkBlockAbove(bot, "air", 10, 64, -5)`와 공개 코드의 `checkBlockAbove(bot, "air", new Vec3(10, 64, -5))`는 같은 위치를 전달하지만 parameter 표현이 다르다.
+
+`findSuitablePosition`은 crafting table, furnace와 chest 같은 장치를 놓기 전에 bot 주변의 후보 좌표를 순서대로 검사하는 함수다. 후보 위치의 block이 비어 있고 주변 6방향 중 흙·돌처럼 장치를 붙일 reference block이 하나 이상 있으면 해당 좌표를 반환한다. 상위 skill은 `const position = await findSuitablePosition(bot)`으로 좌표를 받은 뒤 `placeItem(bot, "furnace", position)`처럼 사용한다. 따라서 이 함수의 결과는 다수의 crafting·smelting·storage skill의 배치 성공에 함께 영향을 준다. 논문은 대상 위치를 `air`로 설명하지만 공개 구현은 `air`와 `water`를 모두 후보로 검사한다.
+
+`GoalBlock(x,y,z)`은 일반적으로 bot의 발 위치가 지정 block 좌표에 도달하도록 요구하는 pathfinder goal이다. `plantSeeds`는 이미 farmland block이 차지한 좌표를, `feedAnimals`는 계속 움직일 수 있는 entity 좌표를 이 goal에 넣는다. Source만으로 실제 pathfinder의 도달 판정을 확정할 수 없어, 이 항목은 정적 입력·실패 처리와 분리해 Minecraft 상태에서 관찰해야 한다.
+
+`equipArmor`의 “best”는 하나의 수치로 명시돼 있지 않다. 공개 구현은 diamond → iron → gold → chainmail → leather 순으로 먼저 발견한 장비를 선택한다. Minecraft에서는 재료 등급이 대체로 방호력·내구도와 함께 올라가지만 gold는 예외이며, chainmail은 gold보다 내구도가 높고 leggings는 방호력도 더 높다. 따라서 “best”가 공개 코드의 재료 나열 순서인지 실제 방호력·내구도인지에 따라 gold와 chainmail의 상대 순서가 달라진다.
+
+`killAnimal`과 `killMob`의 책임 중복은 다음 상황에서 드러난다. Cow A가 `(10,64,5)`, Cow B가 `(12,64,5)`에 있을 때 `killAnimal`이 먼저 Cow A를 기억하더라도, 내부의 `killMob("cow")`은 `nearestEntity()`를 다시 호출하므로 이동과 거리 변화 뒤 Cow B를 선택할 수 있다. `killMob`이 Cow B를 죽이고 beef·leather까지 수집한 뒤에도 `killAnimal`은 처음 기억한 Cow A의 과거 위치로 이동하고 실제 추가 수집 여부와 관계없이 `Collected dropped items.`를 출력한다. 이 경우 선택 대상, 실제 처치 대상과 성공 메시지가 서로 다를 수 있다.
+
+`/gamemode survival`은 일반 chat이 아니라 OP 권한이 필요한 server command다. 생성된 JavaScript는 전체 `bot` 객체를 받으므로, bot이 OP라면 논리적으로 `bot.chat("/gamemode creative")`, `bot.chat("/give @s diamond 64")` 또는 `bot.chat("/tp @s ...")` 같은 command도 실행할 수 있다. Planner나 orchestrator가 정상적으로 subgoal만 생성할 것이라는 기대와 별개로, 현재 interface 자체는 `/`로 시작하는 command를 기술적으로 차단하지 않는다.
+
+`exploreUntil`의 이동 거리는 `Math.floor(Math.random() * 20 + 10)`으로 계산돼 호출할 때마다 10~29 block 사이에서 달라진다. Production에서는 같은 방향을 탐색해도 12칸 또는 25칸처럼 서로 다른 goal이 만들어질 수 있다. Offline fixture에서 `Math.random()`의 반환값을 잠시 `0`으로 두면 항상 10 block, `0.999`로 두면 항상 29 block이 계산되므로 goal 좌표, cleanup과 timeout 분기를 반복해서 같은 조건으로 관찰할 수 있다. 이는 production 탐색을 고정한다는 뜻이 아니라 fixture 안에서만 난수 결과를 예측 가능하게 만든다는 뜻이다.
+
+이 구분에서 “의도 확인”은 오류 가능성이 낮다는 뜻이 아니다. 논문과 공개 코드 중 어느 쪽을 modernized contract로 삼을지 결정해야 수정 방향이 달라진다는 뜻이다. 특히 `GoalBlock` 접근은 source만으로 실패를 단정하지 않고 Minecraft fixture로 판별한다.
+
+### 4. 권장 검증 순서
+
+1. Spatial·inventory·equipment·count처럼 server가 필요 없는 primitive를 mock bot offline fixture로 묶는다.
+2. 위 명백한 오류를 수정하고 성공, 입력 누락, 빈 검색 결과와 실패 후 상태를 회귀로 고정한다.
+3. Voyager custom primitive의 placement, smelting과 chest contract를 offline interface fixture로 확인한다.
+4. Mineflayer 직접 API 10개는 각각 별도 서버를 띄우지 않고 farming, consume, fishing, sleeping과 entity interaction 대표 fixture로 묶는다.
+5. Minecraft online 검증은 farming, placement/cooking, storage, inventory/equipment와 combat의 기능군 단위로 수행한다. Combat은 dependency와 `/gamemode` 정책을 확정한 뒤 마지막에 분리한다.
+
+따라서 최종 `40/40`은 모든 항목에 적어도 syntax·offline contract 또는 direct-interface 증거가 있고, 실제 world state가 필요한 기능군에 대표 online fixture가 있을 때 표시한다. 38개를 각각 별도 online 실행하는 방식은 요구하지 않는다.
+
+### 5. 근거 파일
+
+- [Primitive 40 working manifest](../manifest/odyssey_primitive_40.json)
+- [현재 primitive offline fixture](../../Odyssey/scripts/primitive_runtime_offline.js)
+- [현재 primitive online fixture](../../Odyssey/scripts/primitive_runtime_online.py)
+- [Odyssey 추가 primitive source](../../Odyssey/skill_library/skill/primitive)
+- [Voyager 상속 control primitive source](../../Odyssey/odyssey/control_primitives)
+- [Modern Mineflayer bridge](../../Odyssey/odyssey/env/mineflayer/index.js)
+
+---
+
+## 2026-08-27 — Primitive 명백 오류 전 선행 정책 6항목
+
+작성일: 2026-08-27
+대상 브랜치: `experiment/odyssey-modernized`
+범위: 연구자가 확정한 공개-code contract와 실행 권한 경계를 명백 오류 수정 전에 고정. `plantSeeds`·`feedAnimals`의 Pathfinder goal은 이 단계에서 변경하지 않음
+
+### 1. 논문 기능에 대응하는 한 줄 설명
+
+Compositional skill이 공유하는 primitive의 입력 형식·배치 조건·장비 선택·전투 후처리·탐색 난수와 서버 권한 경계를 먼저 고정해, 이후 결함 수정이 공개 Odyssey의 행동 의미를 임의로 바꾸지 않게 했다.
+
+### 2. 확정한 contract와 구현
+
+| 항목 | modernized contract | 구현·증거 |
+|---|---|---|
+| Spatial position | 공개 compositional caller와 같은 `Vec3`를 사용 | `checkBlockAbove`·`checkBlocksAround`의 `Vec3` 입력과 plain object 거부를 offline fixture로 확인 |
+| Placement target | 공개 코드 우선으로 `findSuitablePosition`의 `air` 또는 `water` 후보를 유지 | 인접 reference block이 있는 water 좌표가 반환되는 fixture 통과 |
+| Armor order | 사용자가 이해하기 쉬운 공개 재료 순서 diamond → iron → gold → chainmail → leather 유지 | 네 armor slot 모두 gold와 chainmail이 함께 있을 때 gold가 선택됨을 확인 |
+| Drop ownership | `killMob`이 target 선택·처치·drop 회수와 결과를 소유하고 `killAnimal`은 sword 장착 뒤 한 번만 위임 | `killAnimal`의 과거 entity 재이동과 중복 수집 메시지를 제거하고 단일 위임 fixture 통과 |
+| Server operator boundary | 실행 bot은 non-OP, world 준비·gamemode·summon·reset은 연구자/서버 호스트의 container-local RCON harness가 담당 | modernized `ops.json=[]`, generated skill의 `/` command 차단, hard reset·inventory injection 거부, `host_admin_rcon.py` 추가 |
+| Exploration randomness | episode seed 42에서 시작하는 재현 가능한 의사난수 sequence를 사용하되 탐색 거리는 계속 10~29 block 사이에서 변함 | 같은 seed의 8개 값이 일치하고 값들이 고정 상수가 아님을 fixture로 확인 |
+
+`42`는 특별한 Minecraft 의미나 성능 근거가 있는 값이 아니라, 동일한 탐색 조건을 다시 만들기 위한 명시적 기본 seed다. 구현은 32-bit LCG 상태를 episode마다 42로 초기화하며 `/health`에 seed와 현재 RNG state를 노출한다.
+
+### 3. 권한 격리의 의미
+
+Node wrapper의 `/` 차단만으로 보안을 주장하지 않는다. 최종 권한 경계는 Minecraft server의 빈 operator 목록이다. 실행 bot이 잘못 생성된 `bot.chat("/give ...")` 코드를 전달받더라도 server 권한으로 관리자 명령을 수행할 수 없어야 한다. 연구자가 fixture를 준비할 때만 Git에서 제외된 RCON 비밀번호와 `docker compose exec` 기반 host harness를 사용하며, RCON port는 host network에 publish하지 않는다.
+
+기존 E0의 OP bot·hard reset 절차는 과거 tag/profile의 재현 기록으로만 남는다. Modernized Python bridge는 soft reset을 기본값으로 사용하고 world state injection을 명시적으로 거부한다. `/pause`도 기본 no-op이며 명시적 legacy adapter에서만 호출한다.
+
+### 4. 자동검사 결과와 아직 주장하지 않는 것
+
+```text
+PASS spatial primitives keep the public Vec3 contract
+PASS findSuitablePosition preserves water as a public-code target
+PASS equipArmor preserves gold before chainmail
+PASS killAnimal delegates target, combat and drop ownership once
+PASS exploration seed 42 produces a repeatable non-constant sequence
+PASS modernized execution profile contains no bot operator
+6/6 primitive policy fixtures passed
+```
+
+Offline 결과 뒤 같은 날 modernized server를 실제 재기동해 권한 경계도 확인했다. 첫 RCON 호출은 server가 listener를 열기 1초 전에 도착해 connection refused가 발생했으며, server health 확인 뒤 재실행하면 정상 동작했다. 이 startup race를 반복하지 않도록 host harness는 connection refused에 한해서 1초 간격·최대 10회 재시도한다.
+
+```text
+Minecraft: healthy, RCON running on 0.0.0.0:25575
+host prepare-player: inventory 3개 제거, player kill/respawn 성공
+deop bot: Nothing changed. The player is not an operator
+/health: connected=true, position_finite=true, inventory={}
+/health: exploration_seed=42, exploration_rng_state=42
+/health: operator_commands_enabled=false
+agent /gamemode creative: Server commands are restricted to the host-admin RCON harness
+RCON playerGameType after denial: 0 (survival)
+```
+
+따라서 server-level non-OP, host-only 관리자 경로, agent command 거부와 seed 42 초기 상태까지 online으로 통과했다. `killMob`의 combat plugin 부재 등 기존 감사에서 명백한 오류로 분류한 항목은 아직 수정하지 않았고, `GoalBlock` 판단은 합의한 순서대로 모든 나머지 문제 뒤로 미뤘다.
+
+이번 실행의 `runtime/minecraft/mods`에는 과거 legacy pause JAR 4종이 남아 있어 server가 이를 함께 load했다. 권한 검증 경로는 `/health`, soft `/start`, `/step`과 RCON만 사용해 `/pause`를 호출하지 않았지만, 이 결과를 “mod-free 재검증”으로 확대하지 않는다. Bridge에서는 `physicTick` deprecated-event 경고도 한 번 관찰됐다. 현재 project source는 이미 `physicsTick`을 사용하므로 dependency 내부 발생 여부를 나머지 executor 경고 감사에서 추적한다. 두 관찰 모두 이번 non-OP·seed 판정을 바꾸지는 않았다.
+
+정적 검색 결과 `odyssey/test_env/*`, `givePlacedItemBack`과 compositional `placeMinecartOnRail`에는 여전히 bot이 직접 `/tp`, `/fill`, `/give`, `/summon` 등을 호출하는 과거 경로가 있다. Modernized profile에서는 이 코드가 관리자 권한을 얻는 대신 명시적으로 거부된다. Test environment 준비 명령은 host harness로 옮기고, 논문 기능인 item 회수·minecart 배치는 일반 Mineflayer 동작으로 바꾸거나 별도 controlled fixture로 분류해야 한다. 이 후속 migration은 권한 경계를 무력화하지 않고 나머지 명백 오류와 함께 처리한다.
+
+### 5. 근거 파일
+
+- [Primitive policy offline fixture](../../Odyssey/scripts/primitive_policy_offline.js)
+- [Primitive 40 working manifest](../manifest/odyssey_primitive_40.json)
+- [Host-only RCON harness](../../Odyssey/scripts/host_admin_rcon.py)
+- [Modern server operator profile](../../Odyssey/server-profile/modernized/ops.json)
+- [실행·검증 절차](../README.md#32-터미널-1-minecraft-서버-실행)

@@ -53,8 +53,8 @@ goal + constraints + environment observation
 
 | 논문 기능 | 보존할 contract | 공개 코드 | 주 dependency/model | 현재 판정 |
 |---|---|---|---|---|
-| Minecraft environment와 observation | 실행 전후 inventory, status, voxel, entity, chest, chat와 error를 구조화 event로 반환 | `odyssey/env/bridge.py`, `odyssey/env/mineflayer/index.js`, `lib/observation/*` | Mineflayer, minecraft-data, Express, requests | executor 회귀 완료. Python bridge의 `/pause` 결합은 일반 경로에 남아 있음 |
-| Primitive skill | compositional skill이 호출할 안정된 저수준 동작 제공 | `skill_library/skill/primitive`, `odyssey/control_primitives`, `control_primitives_context/mineflayer.js` | Mineflayer, pathfinder, tool, collectblock | [40개 working manifest](../manifest/odyssey_primitive_40.json) 작성. runtime fixture와 contract 위험 수정은 남음 |
+| Minecraft environment와 observation | 실행 전후 inventory, status, voxel, entity, chest, chat와 error를 구조화 event로 반환 | `odyssey/env/bridge.py`, `odyssey/env/mineflayer/index.js`, `lib/observation/*` | Mineflayer, minecraft-data, Express, requests | executor 회귀 완료. `/pause`는 명시적 legacy adapter로 격리했고 modernized 기본은 no-op |
+| Primitive skill | compositional skill이 호출할 안정된 저수준 동작 제공 | `skill_library/skill/primitive`, `odyssey/control_primitives`, `control_primitives_context/mineflayer.js` | Mineflayer, pathfinder, tool, collectblock | [40개 working manifest](../manifest/odyssey_primitive_40.json) 작성. 정책 fixture 6/6 통과, 나머지 명백 오류와 runtime 검증은 남음 |
 | Compositional skill | 이름, code, description을 가진 재사용 skill이며 다른 skill을 재귀 호출 가능 | `skill_library/skill/compositional`, `skill/skills.json` | JavaScript executor와 primitive corpus | 183 code·description·JSON entry 동기화와 파일별 checksum 완료 |
 | Skill description | 전체 program code에서 자연어 설명을 얻고 retrieval corpus로 사용 | `skill_library/skill/description`, `SkillManager.generate_skill_description` | 논문상 LLM; 현재 저장 corpus | 고정 corpus는 존재. 생성 경로는 비활성·불완전 |
 | Semantic skill retrieval | 자연어 context와 descriptions를 같은 encoder로 embedding하고 유사도 순으로 candidate 반환 | `agents/skill.py: SkillManager.retrieve_skills`, `odyssey/retrieval_embedding.py` | Sentence Transformers → LangChain embedding adapter → Chroma | L2·top-5 기본·top-10 별도 profile 고정. 183개 fresh index와 별도 프로세스 reload에서 후보 순서·score 동일성 통과 |
@@ -87,7 +87,7 @@ skill/skills.json                         sha256 0be22fdc338d4db199c75d60ad6455e
 conf/config.json                          sha256 504cea1fc2489aff6e38f9c1000aabbc704bfe8c3ed5224778a9e9bf4d7113f5
 requirements.txt                          sha256 45f8947cf4bb08525d94d1ceb1504d105c579d15afdcd05b45f839f5bf818ecc
 mineflayer/package-lock.json              sha256 5555e896e0c5d19c635965bc9338b0cd60a248092bc9c8ff65a6c678943a6b7c
-manifest/odyssey_primitive_40.json         sha256 e9dec40c7ff6ca7cb8b3a7f6d7ba4fc210890f75d47226e85ffc8d57361cdecb
+manifest/odyssey_primitive_40.json         sha256 446f462bb61e3799d3e7e6d9a3537113503f9911b33e9e6da6e47a86b0af33ea
 manifest/odyssey_skill_corpus.sha256       sha256 31a4c1e3f7672a7a422628ddb9701b485286b25bb3edd67e403aeb9eaab73861
 manifest/odyssey_semantic_encoder.json     sha256 c393693544bee8b799e8f1e576174cc3b2f9a1c3fb0ac83535748fec00677b1c
 log/semantic_retrieval_smoke_2026-08-27.json sha256 b39d4838001a9da4bb1bda8a5fdc7b0a1921496cb66d767669296234e87704a5
@@ -115,7 +115,7 @@ Voyager 부록 A.4와 현재 `control_primitives_context`를 함께 보면 상�
 
 이 18개 목록은 Odyssey 부록이 상속분을 다시 열거하지 않기 때문에 Voyager 부록과 공개 prompt context를 결합한 working map이다. 따라서 현재 파일 11개를 더해 수를 맞추지 않고, 각 interface가 modernized Mineflayer에서 호출 가능한지를 회귀 fixture로 확인해야 최종 고정된다.
 
-전체 40개 항목의 논문 contract, source path, 주 호출 API와 정적 판정은 [`odyssey_primitive_40.json`](../manifest/odyssey_primitive_40.json)에 고정했다. 실제 함수 파일은 syntax 검사를 통과했다. `control_primitives_context/mineflayer.js`는 top-level `await` 예시를 포함한 prompt fragment이므로 실행 파일이 아니라 외부 API 선언 근거로만 취급한다. `goto`의 위치 오타·종료 조건과 `getAnimal`의 대입 조건·동물 유인 불일치는 수정했으며 offline fixture 14/14을 통과했다. `getAnimal(cow)`은 목표 유인, `goto`는 block-grid 거리 1.414와 `onError` 없음으로 2026-08-27 Minecraft online fixture를 각각 통과했다. 나머지 primitive contract 위험의 수정·검증은 남아 있다.
+전체 40개 항목의 논문 contract, source path, 주 호출 API와 정적 판정은 [`odyssey_primitive_40.json`](../manifest/odyssey_primitive_40.json)에 고정했다. 실제 함수 파일은 syntax 검사를 통과했다. `control_primitives_context/mineflayer.js`는 top-level `await` 예시를 포함한 prompt fragment이므로 실행 파일이 아니라 외부 API 선언 근거로만 취급한다. `goto`의 위치 오타·종료 조건과 `getAnimal`의 대입 조건·동물 유인 불일치는 수정했으며 offline fixture 14/14을 통과했다. `getAnimal(cow)`은 목표 유인, `goto`는 block-grid 거리 1.414와 `onError` 없음으로 2026-08-27 Minecraft online fixture를 각각 통과했다. 이후 연구자가 정한 `Vec3`, air/water 배치, 공개 armor 재료 순서, 단일 drop 책임, server-host OP 경계와 탐색 seed 42를 policy fixture 6/6으로 고정했고, 실제 server에서 non-OP·host RCON·agent command 거부·survival 유지도 확인했다. 나머지 명백 오류와 마지막 Pathfinder goal 판단은 남아 있다.
 
 ## 5. 재현 contract 초안
 
@@ -214,6 +214,7 @@ HTTP timeout, non-2xx, disconnected bot, JavaScript evaluation error와 critic v
 
 1. **Retrieval k:** 본문 2.2는 top-5, 부록 C.3과 autonomous exploration 설명은 top-10이다. 연산 부담을 줄이기 위해 top-5를 기본 profile로 고정하고, top-10은 별도 profile로 보존한다.
 2. **Encoder checkpoint:** 공개 config의 multilingual MiniLM을 modernized 재현 기준으로 사용한다. 이는 논문이 명시한 checkpoint가 아니라 공개 코드가 선택한 checkpoint다.
+3. **Primitive 선행 정책:** 기존 caller의 `Vec3`, 공개 코드의 air/water 배치와 armor 순서를 유지한다. `killMob`이 drop 책임을 단독 소유하고, 실행 bot은 non-OP로 두며 관리자 작업은 server-host RCON으로 격리한다. 탐색은 episode seed 42의 재현 가능한 의사난수를 사용한다. Pathfinder goal은 다른 문제를 모두 처리한 뒤 판단한다.
 
 ### 남은 구현·검증 항목
 
@@ -227,7 +228,7 @@ HTTP timeout, non-2xx, disconnected bot, JavaScript evaluation error와 critic v
 8. **Eager coupling:** `Odyssey` 생성만으로 environment, planner QA vector DB, retrieval DB, launcher/provider import가 함께 초기화된다.
 9. **CWD 의존:** skill primitive와 sibling comprehensive library 경로가 `os.getcwd()`에 의존한다.
 
-README의 Mineflayer 버전과 mod bundle 설명은 이번 감사에서 현재 lock 및 mod-free E0 증거에 맞춰 수정했다. Python `VoyagerEnv` 내부의 `/pause` 호출 자체는 end-to-end 연결 전에 optional adapter로 격리해야 한다.
+README의 Mineflayer 버전과 mod bundle 설명은 이번 감사에서 현재 lock 및 mod-free E0 증거에 맞춰 수정했다. Python `VoyagerEnv`의 `/pause`는 modernized 기본 no-op이고 `legacy_pause_adapter=True`를 명시한 과거 호환 profile에서만 사용한다.
 
 ## 9. 검증 순서
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_on": "2026-08-27",
-  "code_baseline": "working tree based on 5fd2c51; primitive runtime changes pending commit",
+  "code_baseline": "experiment/odyssey-modernized working tree; primitive policy changes pending commit",
   "purpose": "논문의 primitive 40개가 modernized 코드의 어느 함수·Mineflayer API contract에 대응하는지 고정한다.",
   "counts": {
     "total": 40,
@@ -17,6 +17,15 @@
     "Odyssey/skill_library/skill/primitive"
   ],
   "inherited_mapping_note": "Odyssey는 Voyager 상속 18개의 이름을 다시 열거하지 않는다. 이 working map은 Voyager의 custom control 8개와 실제 행동으로 직접 호출되는 bot method 10개를 합친다. Goal* constructor와 bot.isABed는 지원 helper로 추적하지만 18개 수에는 넣지 않는다. 이 해석은 runtime interface fixture 전까지 working provenance다.",
+  "researcher_decisions": {
+    "spatial_position_type": "공개 compositional caller와 같은 Vec3를 modernized contract로 사용",
+    "placement_target": "공개 코드 우선으로 findSuitablePosition의 air 또는 water target을 유지",
+    "pathfinder_goal": "다른 정적·명백 오류를 모두 처리한 뒤 Minecraft fixture에서 판단",
+    "armor_material_order": "공개 코드의 diamond > iron > gold > chainmail > leather 순서를 유지",
+    "drop_ownership": "killMob이 target 선택, 처치, drop 회수와 결과를 소유하고 killAnimal은 sword 장착 뒤 위임",
+    "operator_boundary": "실행 bot은 non-OP이며 world 준비, gamemode, summon과 reset은 서버 호스트 RCON harness만 수행",
+    "exploration_seed": "episode-level deterministic PRNG seed 42"
+  },
   "status_legend": {
     "source-mapped": "논문 contract와 공개 source의 함수/API 위치를 정적으로 연결함",
     "prompt-declared direct API": "Voyager prompt와 Odyssey context에 선언된 외부 Mineflayer API",
@@ -39,7 +48,7 @@
         "bot.entity.position",
         "callback"
       ],
-      "verification": "source-mapped; runtime fixture pending"
+      "verification": "offline-verified seed 42 PRNG sequence; movement and timeout runtime fixture pending"
     },
     {
       "name": "mineBlock",
@@ -283,11 +292,9 @@
       "implementation": "Odyssey/skill_library/skill/primitive/killAnimal.js",
       "primary_interfaces": [
         "equipSword",
-        "exploreUntil",
-        "killMob",
-        "bot.pathfinder.goto"
+        "killMob"
       ],
-      "verification": "source-mapped; drop collection requires fixture"
+      "verification": "offline-verified single delegation to killMob; combat runtime fixture pending"
     },
     {
       "name": "killMonsters",
@@ -302,7 +309,7 @@
         "bot.pathfinder.goto",
         "bot.chat"
       ],
-      "verification": "contract risk: command permission, nullable target and undeclared state"
+      "verification": "OP command removed and host boundary fixed; nullable target and undeclared state remain contract risks"
     },
     {
       "name": "cookFood",
@@ -340,7 +347,7 @@
         "bot.inventory",
         "bot.equip"
       ],
-      "verification": "source-mapped; runtime fixture pending"
+      "verification": "offline-verified public material order diamond > iron > gold > chainmail > leather; runtime fixture pending"
     },
     {
       "name": "equipSword",
@@ -430,14 +437,15 @@
       "name": "findSuitablePosition",
       "lineage": "odyssey-added",
       "category": "spatial",
-      "paper_contract": "device를 놓을 수 있는 가까운 air/water 좌표와 인접 reference block을 찾는다.",
+      "paper_contract": "device를 놓을 수 있는 가까운 air 좌표와 인접 reference block을 찾는다.",
+      "modernized_contract": "공개 코드 우선으로 가까운 air 또는 water 좌표와 인접 reference block을 찾는다.",
       "implementation": "Odyssey/skill_library/skill/primitive/findSuitablePosition.js",
       "primary_interfaces": [
         "bot.entity.position",
         "bot.blockAt",
         "checkNoAdjacentBlock"
       ],
-      "verification": "source-mapped; duplicate offsets require cleanup review"
+      "verification": "offline-verified water target preservation; duplicate offsets require cleanup review"
     },
     {
       "name": "checkAdjacentBlock",
@@ -456,24 +464,26 @@
       "lineage": "odyssey-added",
       "category": "spatial",
       "paper_contract": "지정 위치 바로 위 block의 type 일치 여부를 반환한다.",
+      "modernized_contract": "기존 compositional caller와 같은 Vec3 position을 받는다.",
       "implementation": "Odyssey/skill_library/skill/primitive/checkBlockAbove.js",
       "primary_interfaces": [
         "Vec3",
         "bot.blockAt"
       ],
-      "verification": "signature drift: paper uses x,y,z; source uses Vec3 position"
+      "verification": "offline-verified Vec3 contract; paper signature difference documented"
     },
     {
       "name": "checkBlocksAround",
       "lineage": "odyssey-added",
       "category": "spatial",
       "paper_contract": "지정 위치의 수평 4방향 block 중 type 일치 여부를 반환한다.",
+      "modernized_contract": "기존 compositional caller와 같은 Vec3 position을 받는다.",
       "implementation": "Odyssey/skill_library/skill/primitive/checkBlocksAround.js",
       "primary_interfaces": [
         "Vec3",
         "bot.blockAt"
       ],
-      "verification": "signature drift: paper uses x,y,z; source uses Vec3 position"
+      "verification": "offline-verified Vec3 contract; paper signature difference documented"
     },
     {
       "name": "checkNearbyBlock",
