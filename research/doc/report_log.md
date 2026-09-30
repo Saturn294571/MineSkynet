@@ -1550,3 +1550,86 @@ Judger의 중간 측정도 `0 → 1/3 → 2/3 → 1` 순서로 상승했다. 따
 Judger는 score와 `end` 상태를 정상 생성하고 Alice와 `build_judge` 연결을 종료했지만, `start_with_config.py` parent process는 자동으로 빠져나오지 않았다. 결과 파일이 모두 보존된 것을 확인한 뒤 parent를 수동 중단했다. 이는 benchmark 결과의 성공 여부와 별개로 launcher lifecycle·process cleanup 결함이다.
 
 또한 실패한 첫 시도의 산출물은 기존 결과 디렉터리에 보존했으며 성공 결과로 덮어쓰지 않았다. 다음 단계에서는 생성된 score의 의미와 논문 metric 정의를 대조하고, 필요하면 launcher 종료와 OP 전제를 재현 절차에 명시한다.
+
+---
+
+## 2026-09-30 — Benchmark 검증 1-4: scenario judger metric 생성 경로
+
+### 1. 판정
+
+Construction과 Farming의 단일 case에서 scenario judger가 실행 결과 디렉터리에 `score.json`, `action_log.json`, `tokens.json`을 함께 생성하는 것을 확인했다. 따라서 **행동 로그에서 scenario별 completion과 efficiency를 계산해 episode 산출물로 보존하는 기본 경로는 작동한다.** 다만 세 scenario가 같은 metric schema를 구현하지 않으므로, 현재 출력 전체를 논문 표의 공통 metric으로 바로 간주할 수는 없다.
+
+| Scenario | 실제 생성 metric | 확인 결과 |
+|---|---|---|
+| Construction Task0 | `block_hit_rate`, `view_hit_rate`, `efficiency`, `use_time`, `complexity` | `1.0`, `1.0`, `16.8900`, `18초`, `2.9067` |
+| Farming Task0 | `score`, `cooperation`, `efficiency`, `balance`, `use_time` | `100`, `100`, `13.3333`, `1.0`, `9초` |
+| Escape Room | `complete_score`, `complexity_score`, `efficiency`, `balance`, `use_time`을 기록하도록 구현 | world load blocker로 실제 산출 미확인 |
+
+Construction은 block와 facing이 모두 일치할 때 완료되며, Farming은 최종 산출물인 cake checkpoint가 충족되어 `score=100`이 됐다. 두 결과 모두 `end_reason=complete task`를 남겼다.
+
+### 2. metric 해석상 주의점
+
+코드의 `efficiency`는 단순 실행속도나 wall-clock latency가 아니라 scenario별 action-time budget을 실제 `use_time`으로 나눈 값이다. Construction은 `((ln(complexity)+1)×60+180)/18 = 16.8900`, Farming은 `(complexity×40)/9 = 120/9 = 13.3333`으로 저장됐다. 따라서 값이 1보다 클 수 있으며 scenario별 budget 식도 다르다. 논문의 `E`와 대조하기 전에는 두 값을 직접 비교하거나 “16.89배 빠름”으로 해석하지 않는다.
+
+`use_time`도 episode wall time이나 action duration 합이 아니다. 각 action의 초 단위 `start_time`–`end_time` 구간을 합집합으로 병합한 값이어서 1초 미만 action이 0초가 될 수 있다. Farming episode는 실제로 약 1분간 진행됐지만 계산된 action coverage는 9초다. 이 구현 선택은 효율 수치를 크게 만들 수 있으므로 후속 성능 비교 전에 별도 검증이 필요하다.
+
+또한 Construction에는 `calculate_balance()`가 정의돼 있으나 최종 `score.json`에는 balance가 기록되지 않는다. 반대로 Farming의 1-agent `balance=1.0`은 단일 agent에서 자명한 값이라 협업 균형의 증거가 아니다. `cooperation=100` 역시 이번 1-agent 실행에서는 multi-agent cooperation을 입증하지 않는다.
+
+### 3. 자의적 판단
+
+1-4의 완료 기준을 “논문 수치 재현”이 아니라 “judger가 실제 episode의 completion과 보조 metric을 생성하고 원자료와 함께 보존하는가”로 제한했다. 이 기준에서는 Construction과 Farming 경로가 통과했다. 반면 metric 이름과 식의 scenario 간 불일치는 연구 해석 문제로 승격해 숨기지 않고 남겼으며, 공통 metric으로 정규화하는 작업은 수행하지 않았다.
+
+---
+
+## 2026-09-30 — Benchmark 검증 1-5: 세 scenario 최소 case
+
+### 1. 실행 범위와 결과
+
+API 비용과 원인 혼입을 줄이기 위해 각 scenario의 가장 작은 단일 case를 우선 선택했다. 이는 framework의 실행 가능성을 확인하는 smoke validation이며 multi-agent collaboration 성능 재현은 아니다.
+
+| Scenario | 최소 조건 | 결과 | LLM 사용 |
+|---|---|---|---:|
+| Construction | Task0, 1 agent, 3-block lamp | 완료 | 24 requests, $0.0654195 |
+| Farming | Task0 `cake_0`, 1 agent, 모든 재료가 chest에 존재 | 완료 | 24 requests, $0.0685515 |
+| Escape Room | seed 0, 1 room, 1 agent | 검증 완료: `action_time out`과 평가 산출물 생성 | 48 requests, $0.1331415 |
+
+Farming은 Alice가 chest와 crafting table을 찾고, egg·milk bucket·wheat·sugar를 회수해 cake를 제작했다. judger는 `score=100`, `cooperation=100`, `balance=1.0`, `use_time=9초`를 기록했고 launcher도 exit code 0으로 종료됐다.
+
+Escape Room은 두 단계에서 막혔다. 첫 시도는 `minecrafthawkeye`의 CommonJS module 객체를 plugin 함수처럼 전달해 `plugin needs to be a function` 오류로 즉시 종료됐다. 저장소의 `minecraft_server.py`와 동일하게 `require("minecrafthawkeye").default`를 사용하도록 `env/escape_room_judger.py` 한 줄을 호환 수정했다. 이후 judger는 접속을 유지했고 `.cache/task.cache`에 “두 oak pressure plate를 동시에 눌러 iron door를 여는” 유효한 단일 room도 생성했지만, `state_tree.load()` 구간에서 `.cache/load_status.cache`가 160초 동안 `loading`에 머물러 launcher가 `server failed to start`로 종료됐다.
+
+정지 위치를 더 좁히기 위한 process attach는 OS의 `ptrace` 권한에서 거부됐다. 연구자가 지정한 권한 이슈 중단 기준에 따라 추가 권한 요청이나 계측 patch 없이 여기서 중단했다. 임시로 부여한 `escape_judge`와 Alice의 OP는 모두 회수했고 Minecraft server는 `healthy`, 접속자 0명 상태다.
+
+### 2. 관찰된 이슈
+
+1. Farming config가 Construction에서 사용한 `data/map_description.json`을 그대로 가리켜, Task Manager의 `meta-data.recipe`에 이전 3-block blueprint가 섞였다. task description과 Farming judger는 별도 경로를 사용해 cake 제작과 판정은 성공했지만, cross-scenario metadata 오염은 재현성과 decomposition 품질에 영향을 줄 수 있다. Escape 설정에서는 `document_file`을 빈 값으로 바꿨다.
+2. Farming의 `withdrawItem(milk_bucket, count=3)`은 action message상 성공했지만 직후 inventory 요약에는 `milk_bucket: 1`로 표시됐다. 실제 craft는 성공해 세 bucket을 소비했으므로 item stack 표현 또는 관측 serialization 문제로 보인다.
+3. Construction과 달리 Farming launcher는 judger 종료 신호 뒤 자동 종료됐다. lifecycle 문제는 모든 scenario에 공통으로 재현되지는 않았다.
+4. Escape judger의 stderr가 기본 실행에서 `/dev/null`로 버려져 최초 plugin 오류가 단순 `loading` 정지처럼 보였다. 초기화 실패의 원인 보존을 위해 judger stderr capture가 필요하다.
+
+### 3. 자의적 판단과 현재 결론
+
+- Farming은 가장 쉬운 `cake_0`을 선택했다. 재료 획득 난이도를 배제하고 farming world 초기화, chest interaction, crafting, checkpoint scoring 경로만 검증하기 위한 선택이다.
+- Escape는 전체 multi-room benchmark 대신 seed 0·1 room·1 agent로 축소했다. 생성된 room의 `min_player=1`을 확인했으므로 agent 수 때문에 불가능한 case를 택한 것은 아니다.
+- 사소한 package export 호환성은 저장소 내 이미 작동하는 사용례와 일치시키는 한 줄 수정으로 처리했다. 반면 160초 world-load 정지를 우회하기 위한 timeout 확대나 room loader 변경은 benchmark 조건과 실패 판정을 바꿀 수 있어 자의적으로 적용하지 않았다.
+
+따라서 최초 시도 시점에는 Construction과 Farming 완료, Escape Room 부분 완료로 판정했다. 아래 후속 재검증에서 최종 판정을 갱신한다.
+
+### 4. 임시 권한 허용 후 Escape Room 재검증
+
+연구자가 `kernel.yama.ptrace_scope=0`을 임시 허용한 뒤 동일 설정으로 재실행했다. 이번에는 별도 tracing을 붙이기 전에 world loader가 약 5초 만에 정상 완료되어 이전 160초 정지는 재현되지 않았다. 따라서 이전 현상은 결정적인 상시 blocker가 아니라 비결정적 초기화 정지로 분류한다.
+
+Alice는 room 탐색, 두 pressure plate 발견, 각 plate로의 이동과 iron door 통과를 시도했다. 그러나 task 설명은 두 plate의 동시 활성화를 요구하는데 1-agent가 한 plate에서 다른 plate로 이동하는 방식으로 반복했고, chest로 향하는 경로도 iron door 부근에서 계속 막혔다. 최종 결과는 다음과 같다.
+
+| 항목 | 결과 |
+|---|---:|
+| 종료 사유 | `action_time out` |
+| `use_time` | 122초 |
+| 기록 action | 22회 (`navigateTo` 12, `scanNearbyEntities` 10) |
+| 실패 action | 10회 |
+| `efficiency` | 1 |
+| `balance` | 1.0 |
+| LLM request / 비용 | 48회 / $0.1331415 |
+
+Timeout `score.json`에는 `complete_score`가 빠져 있고 `complexity_score=2.0`만 남았지만, 같은 episode의 `data/score.json`은 실제 room score를 `0`으로 기록한다. 이는 `complexity_score`가 과거의 최대 부분 충족 상태를 유지하거나 timeout 시점의 completion을 명시하지 않는 metric 일관성 문제다. 따라서 `complexity_score=2.0`을 성공으로 해석하지 않고 `end_reason`과 intermediate score를 우선한다.
+
+이 실행으로 Escape Room도 world 생성, Decomposer–Controller–actor 실행, timeout 판정, action·token·score 보존까지 도달했다. 따라서 기존 완료 기준에 따라 **1-5의 세 scenario 실행 경로 검증은 완료**로 갱신한다. 단, task 자체의 성공은 Construction과 Farming 두 case이며 Escape Room case는 실패 종료다.
